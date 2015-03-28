@@ -1,0 +1,15 @@
+[package]
+
+name = "tendril"
+version = "0.0.1"
+authors = ["Keegan McAllister <mcallister.keegan@gmail.com>"]
+repository = "https://github.com/kmcallister/tendril"
+readme = "README.md"
+license = "MIT/Apache-2.0"
+description = "compact buffer / string type for zero-copy parsing"
+
+[dependencies]
+mac = "0"
+
+[dependencies.futf]
+git = "https://github.com/kmcallister/futf"
