@@ -188,7 +188,7 @@ impl<F> strfmt::Debug for Tendril<F>
     #[inline]
     fn fmt(&self, f: &mut strfmt::Formatter) -> strfmt::Result {
         let kind = match *self.ptr.get() {
-            p if p <= MAX_INLINE_LEN => "inline",
+            p if p <= MAX_INLINE_TAG => "inline",
             p if p & 1 == 1 => "shared",
             _ => "owned",
         };
@@ -237,7 +237,7 @@ impl<F> Tendril<F>
     pub fn is_shared(&self) -> bool {
         let n = *self.ptr.get();
 
-        (n > MAX_INLINE_LEN) && ((n & 1) == 1)
+        (n > MAX_INLINE_TAG) && ((n & 1) == 1)
     }
 
     /// Is the backing buffer shared with this other `Tendril`?
@@ -245,13 +245,13 @@ impl<F> Tendril<F>
     pub fn is_shared_with(&self, other: &Tendril<F>) -> bool {
         let n = *self.ptr.get();
 
-        (n > MAX_INLINE_LEN) && (n == *other.ptr.get())
+        (n > MAX_INLINE_TAG) && (n == *other.ptr.get())
     }
 
     /// Truncate to length 0 without discarding any owned storage.
     #[inline]
     pub fn clear(&mut self) {
-        if *self.ptr.get() <= MAX_INLINE_LEN {
+        if *self.ptr.get() <= MAX_INLINE_TAG {
             self.ptr.set(unsafe { NonZero::new(EMPTY_TAG) });
         } else {
             let (_, shared, _) = unsafe { self.assume_buf() };
@@ -364,7 +364,7 @@ impl<F> Tendril<F>
         let new_len = self.len32().checked_add(other.len32()).expect(OFLOW);
 
         unsafe {
-            if (*self.ptr.get() > MAX_INLINE_LEN) && (*other.ptr.get() > MAX_INLINE_LEN) {
+            if (*self.ptr.get() > MAX_INLINE_TAG) && (*other.ptr.get() > MAX_INLINE_TAG) {
                 let (self_buf, self_shared, _) = self.assume_buf();
                 let (other_buf, other_shared, _) = other.assume_buf();
 
@@ -550,7 +550,7 @@ impl<F> Tendril<F>
     /// Does not check validity or bounds!
     #[inline]
     pub unsafe fn unsafe_subtendril(&self, offset: u32, length: u32) -> Tendril<F> {
-        if *self.ptr.get() <= MAX_INLINE_LEN {
+        if length <= MAX_INLINE_LEN as u32 {
             Tendril::inline(unsafe_slice(self.as_byte_slice(),
                 offset as usize, length as usize))
         } else {
@@ -638,8 +638,9 @@ impl<F> Tendril<F>
         if ptr <= MAX_INLINE_LEN || (ptr & 1) == 1 {
             *self = Tendril::owned_copy(self.as_byte_slice());
         }
-        let new_ptr = self.assume_buf().0.grow(cap).ptr;
-        self.ptr.set(NonZero::new(new_ptr as usize));
+        let buf = self.assume_buf().0.grow(cap);
+        self.ptr.set(NonZero::new(buf.ptr as usize));
+        self.aux.set(buf.cap);
     }
 
     #[inline(always)]
