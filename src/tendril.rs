@@ -915,12 +915,14 @@ mod test {
         assert!(t.try_pop_front(2).is_err());
         assert!(t.try_pop_front(3).is_err());
         assert!(t.try_pop_front(4).is_ok());
+        assert_eq!("zzzzzz", &*t);
 
         let mut t = "zzzzzz\u{1f4a9}".to_tendril();
         assert!(t.try_pop_back(1).is_err());
         assert!(t.try_pop_back(2).is_err());
         assert!(t.try_pop_back(3).is_err());
         assert!(t.try_pop_back(4).is_ok());
+        assert_eq!("zzzzzz", &*t);
     }
 
     #[test]
@@ -976,6 +978,7 @@ mod test {
             == t.subtendril(0, 3));
         assert!(b"\xEA\x99\xAE".to_tendril().try_into_other_format().unwrap()
             == t.subtendril(3, 3));
+        assert!(t.try_as_other_format::<fmt::UTF8>().is_err());
 
         assert!(t.try_subtendril(0, 1).is_err());
         assert!(t.try_subtendril(0, 2).is_err());
@@ -989,6 +992,7 @@ mod test {
         let mut t: Tendril<fmt::WTF8> = Tendril::try_from_byte_slice(b"\xED\xA0\xBD").unwrap();
         assert!(t.try_push_bytes(b"\xED\xB2\xA9").is_ok());
         assert_eq!(b"\xF0\x9F\x92\xA9", t.as_byte_slice());
+        assert!(t.try_as_other_format::<fmt::UTF8>().is_ok());
 
         // unpaired surrogates
         let mut t: Tendril<fmt::WTF8> = Tendril::try_from_byte_slice(b"\xED\xA0\xBB").unwrap();
@@ -999,5 +1003,6 @@ mod test {
         assert_eq!(b"\xED\xA0\xBB\xED\xA0\xBD", t.as_byte_slice());
         assert!(t.try_push_bytes(b"\xED\xB2\xA9").is_ok());
         assert_eq!(b"\xED\xA0\xBB\xF0\x9F\x92\xA9", t.as_byte_slice());
+        assert!(t.try_as_other_format::<fmt::UTF8>().is_err());
     }
 }
