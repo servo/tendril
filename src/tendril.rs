@@ -240,6 +240,14 @@ impl<F> Tendril<F>
         (n > MAX_INLINE_LEN) && ((n & 1) == 1)
     }
 
+    /// Is the backing buffer shared with this other `Tendril`?
+    #[inline(always)]
+    pub fn is_shared_with(&self, other: &Tendril<F>) -> bool {
+        let n = *self.ptr.get();
+
+        (n > MAX_INLINE_LEN) && (n == *other.ptr.get())
+    }
+
     /// Truncate to length 0 without discarding any owned storage.
     #[inline]
     pub fn clear(&mut self) {
@@ -777,6 +785,40 @@ impl strfmt::Write for Tendril<fmt::UTF8> {
     }
 }
 
+impl Tendril<fmt::UTF8> {
+    /// Remove and return a run of characters at the front of the `Tendril`
+    /// which are classified the same according to the function `classify`.
+    ///
+    /// Returns `None` on an empty string.
+    #[inline]
+    pub fn pop_front_char_run<C, R>(&mut self, mut classify: C)
+        -> Option<(Tendril<fmt::UTF8>, R)>
+        where C: FnMut(char) -> R,
+              R: PartialEq,
+    {
+        let (class, first_mismatch);
+        {
+            let mut chars = self.char_indices();
+            let (_, first) = unwrap_or_return!(chars.next(), None);
+            class = classify(first);
+            first_mismatch = chars.find(|&(_, ch)| &classify(ch) != &class);
+        }
+
+        match first_mismatch {
+            Some((idx, _)) => unsafe {
+                let t = self.unsafe_subtendril(0, idx as u32);
+                self.unsafe_pop_front(idx as u32);
+                Some((t, class))
+            },
+            None => {
+                let t = self.clone();
+                self.clear();
+                Some((t, class))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::{Tendril, ByteTendril, StrTendril, SliceExt};
@@ -1005,5 +1047,35 @@ mod test {
         assert!(t.try_push_bytes(b"\xED\xB2\xA9").is_ok());
         assert_eq!(b"\xED\xA0\xBB\xF0\x9F\x92\xA9", t.as_byte_slice());
         assert!(t.try_as_other_format::<fmt::UTF8>().is_err());
+    }
+
+    #[test]
+    fn char_run() {
+        for &(s, exp) in &[
+            ("", None),
+            (" ", Some((" ", true))),
+            ("x", Some(("x", false))),
+            ("  \t  \n", Some(("  \t  \n", true))),
+            ("xyzzy", Some(("xyzzy", false))),
+            ("   xyzzy", Some(("   ", true))),
+            ("xyzzy   ", Some(("xyzzy", false))),
+            ("   xyzzy  ", Some(("   ", true))),
+            ("xyzzy   hi", Some(("xyzzy", false))),
+            ("中 ", Some(("中", false))),
+            (" 中 ", Some((" ", true))),
+            ("  中 ", Some(("  ", true))),
+            ("   中 ", Some(("   ", true))),
+        ] {
+            let mut t = s.to_tendril();
+            let res = t.pop_front_char_run(char::is_whitespace);
+            match exp {
+                None => assert!(res.is_none()),
+                Some((es, ec)) => {
+                    let (rt, rc) = res.unwrap();
+                    assert_eq!(es, &*rt);
+                    assert_eq!(ec, rc);
+                }
+            }
+        }
     }
 }
