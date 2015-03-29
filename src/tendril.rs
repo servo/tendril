@@ -821,6 +821,10 @@ impl Tendril<fmt::UTF8> {
 }
 
 #[cfg(test)]
+#[path="bench.rs"]
+mod bench;
+
+#[cfg(test)]
 mod test {
     use super::{Tendril, ByteTendril, StrTendril, SliceExt};
     use fmt;
