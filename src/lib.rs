@@ -7,6 +7,7 @@
 #![feature(alloc, core, unsafe_no_drop_flag, unsafe_destructor)]
 
 extern crate alloc;
+extern crate core;
 #[macro_use] extern crate mac;
 extern crate futf;
 

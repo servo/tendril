@@ -13,6 +13,8 @@ use std::default::Default;
 use std::cmp::Ordering;
 use std::fmt as strfmt;
 
+use core::nonzero::NonZero;
+
 use buf32::{self, Buf32};
 use fmt::{self, Slice};
 use fmt::imp::Fixup;
@@ -47,7 +49,7 @@ pub enum SubtendrilError {
 #[unsafe_no_drop_flag]
 #[repr(packed)]
 pub struct Tendril<F> {
-    ptr: Cell<usize>,
+    ptr: Cell<NonZero<usize>>,
     len: u32,
     aux: Cell<u32>,
     marker: PhantomData<*mut F>,
@@ -65,7 +67,7 @@ impl<F> Clone for Tendril<F>
     #[inline]
     fn clone(&self) -> Tendril<F> {
         unsafe {
-            if self.ptr.get() > MAX_INLINE_TAG {
+            if *self.ptr.get() > MAX_INLINE_TAG {
                 self.make_buf_shared();
                 self.incref();
             }
@@ -82,7 +84,7 @@ impl<F> Drop for Tendril<F>
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            if self.ptr.get() <= MAX_INLINE_TAG {
+            if *self.ptr.get() <= MAX_INLINE_TAG {
                 return;
             }
 
@@ -185,7 +187,7 @@ impl<F> strfmt::Debug for Tendril<F>
 {
     #[inline]
     fn fmt(&self, f: &mut strfmt::Formatter) -> strfmt::Result {
-        let kind = match self.ptr.get() {
+        let kind = match *self.ptr.get() {
             p if p <= MAX_INLINE_LEN => "inline",
             p if p & 1 == 1 => "shared",
             _ => "owned",
@@ -223,7 +225,7 @@ impl<F> Tendril<F>
     /// slice, if any.
     #[inline(always)]
     pub fn len32(&self) -> u32 {
-        match self.ptr.get() {
+        match *self.ptr.get() {
             EMPTY_TAG => 0,
             n if n <= MAX_INLINE_LEN => n as u32,
             _ => self.len,
@@ -233,7 +235,7 @@ impl<F> Tendril<F>
     /// Is the backing buffer shared?
     #[inline(always)]
     pub fn is_shared(&self) -> bool {
-        let n = self.ptr.get();
+        let n = *self.ptr.get();
 
         (n > MAX_INLINE_LEN) && ((n & 1) == 1)
     }
@@ -241,8 +243,8 @@ impl<F> Tendril<F>
     /// Truncate to length 0 without discarding any owned storage.
     #[inline]
     pub fn clear(&mut self) {
-        if self.ptr.get() <= MAX_INLINE_LEN {
-            self.ptr.set(EMPTY_TAG);
+        if *self.ptr.get() <= MAX_INLINE_LEN {
+            self.ptr.set(unsafe { NonZero::new(EMPTY_TAG) });
         } else {
             let (_, shared, _) = unsafe { self.assume_buf() };
             if shared {
@@ -354,7 +356,7 @@ impl<F> Tendril<F>
         let new_len = self.len32().checked_add(other.len32()).expect(OFLOW);
 
         unsafe {
-            if (self.ptr.get() > MAX_INLINE_LEN) && (other.ptr.get() > MAX_INLINE_LEN) {
+            if (*self.ptr.get() > MAX_INLINE_LEN) && (*other.ptr.get() > MAX_INLINE_LEN) {
                 let (self_buf, self_shared, _) = self.assume_buf();
                 let (other_buf, other_shared, _) = other.assume_buf();
 
@@ -540,7 +542,7 @@ impl<F> Tendril<F>
     /// Does not check validity or bounds!
     #[inline]
     pub unsafe fn unsafe_subtendril(&self, offset: u32, length: u32) -> Tendril<F> {
-        if self.ptr.get() <= MAX_INLINE_LEN {
+        if *self.ptr.get() <= MAX_INLINE_LEN {
             Tendril::inline(unsafe_slice(self.as_byte_slice(),
                 offset as usize, length as usize))
         } else {
@@ -585,7 +587,7 @@ impl<F> Tendril<F>
     #[inline(always)]
     fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
         unsafe {
-            match self.ptr.get() {
+            match *self.ptr.get() {
                 EMPTY_TAG => mem::transmute(raw::Slice {
                     data: ptr::null::<u8>(),
                     len: 0,
@@ -612,19 +614,19 @@ impl<F> Tendril<F>
 
     #[inline(always)]
     unsafe fn make_buf_shared(&self) {
-        let p = self.ptr.get();
+        let p = *self.ptr.get();
         if p & 1 == 0 {
             let header = p as *mut Header;
             (*header).cap = self.aux.get();
 
-            self.ptr.set(p | 1);
+            self.ptr.set(NonZero::new(p | 1));
             self.aux.set(0);
         }
     }
 
     #[inline(always)]
     unsafe fn make_owned_with_capacity(&mut self, cap: u32) {
-        let ptr = self.ptr.get();
+        let ptr = *self.ptr.get();
         if ptr <= MAX_INLINE_LEN || (ptr & 1) == 1 {
             *self = Tendril::owned_copy(self.as_byte_slice());
         }
@@ -633,14 +635,14 @@ impl<F> Tendril<F>
 
     #[inline(always)]
     unsafe fn header(&self) -> *mut Header {
-        (self.ptr.get() & !1) as *mut Header
+        (*self.ptr.get() & !1) as *mut Header
     }
 
     #[inline(always)]
     unsafe fn assume_buf(&self) -> (Buf32<Header>, bool, u32) {
         let ptr = self.ptr.get();
         let header = self.header();
-        let shared = (ptr & 1) == 1;
+        let shared = (*ptr & 1) == 1;
         let (cap, offset) = match shared {
             true => ((*header).cap, self.aux.get()),
             false => (self.aux.get(), 0),
@@ -659,7 +661,7 @@ impl<F> Tendril<F>
 
         let len = x.len();
         let mut t = Tendril {
-            ptr: Cell::new(if len == 0 { EMPTY_TAG } else { len }),
+            ptr: Cell::new(NonZero::new(if len == 0 { EMPTY_TAG } else { len })),
             len: mem::uninitialized(),
             aux: mem::uninitialized(),
             marker: PhantomData,
@@ -672,7 +674,7 @@ impl<F> Tendril<F>
     #[inline(always)]
     unsafe fn owned(x: Buf32<Header>) -> Tendril<F> {
         Tendril {
-            ptr: Cell::new(x.ptr as usize),
+            ptr: Cell::new(NonZero::new(x.ptr as usize)),
             len: x.len,
             aux: Cell::new(x.cap),
             marker: PhantomData,
@@ -691,7 +693,7 @@ impl<F> Tendril<F>
     #[inline(always)]
     unsafe fn shared(buf: Buf32<Header>, off: u32, len: u32) -> Tendril<F> {
         Tendril {
-            ptr: Cell::new((buf.ptr as usize) | 1),
+            ptr: Cell::new(NonZero::new((buf.ptr as usize) | 1)),
             len: len,
             aux: Cell::new(off),
             marker: PhantomData,
@@ -796,6 +798,10 @@ mod test {
         let correct = mem::size_of::<*const ()>() + 8;
         assert_eq!(correct, mem::size_of::<ByteTendril>());
         assert_eq!(correct, mem::size_of::<StrTendril>());
+
+        // Check that the NonZero<T> optimization is working.
+        assert_eq!(correct, mem::size_of::<Option<ByteTendril>>());
+        assert_eq!(correct, mem::size_of::<Option<StrTendril>>());
     }
 
     #[test]
