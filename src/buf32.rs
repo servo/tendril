@@ -133,7 +133,6 @@ impl<H> Buf32<H> {
     #[inline]
     pub unsafe fn grow(&mut self, new_cap: u32) {
         if new_cap <= self.cap {
-            self.cap = new_cap;
             return;
         }
 

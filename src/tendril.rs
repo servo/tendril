@@ -641,7 +641,7 @@ impl<F> Tendril<F>
     #[inline]
     unsafe fn make_owned_with_capacity(&mut self, cap: u32) {
         let ptr = *self.ptr.get();
-        if ptr <= MAX_INLINE_LEN || (ptr & 1) == 1 {
+        if ptr <= MAX_INLINE_TAG || (ptr & 1) == 1 {
             *self = Tendril::owned_copy(self.as_byte_slice());
         }
         let mut buf = self.assume_buf().0;
