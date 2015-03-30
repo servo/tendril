@@ -62,7 +62,7 @@ pub unsafe trait Format: MarkerTrait {
     /// Check whether the buffer is valid for this format.
     ///
     /// You may assume the buffer is a prefix of a valid buffer.
-    #[inline(always)]
+    #[inline]
     fn validate_prefix(buf: &[u8]) -> bool {
         <Self as Format>::validate(buf)
     }
@@ -70,7 +70,7 @@ pub unsafe trait Format: MarkerTrait {
     /// Check whether the buffer is valid for this format.
     ///
     /// You may assume the buffer is a suffix of a valid buffer.
-    #[inline(always)]
+    #[inline]
     fn validate_suffix(buf: &[u8]) -> bool {
         <Self as Format>::validate(buf)
     }
@@ -80,7 +80,7 @@ pub unsafe trait Format: MarkerTrait {
     /// You may assume the buffer is a contiguous subsequence
     /// of a valid buffer, but not necessarily a prefix or
     /// a suffix.
-    #[inline(always)]
+    #[inline]
     fn validate_subseq(buf: &[u8]) -> bool {
         <Self as Format>::validate(buf)
     }
@@ -173,7 +173,7 @@ unsafe impl Slice for [u8] {
 pub struct ASCII;
 
 unsafe impl Format for ASCII {
-    #[inline(always)]
+    #[inline]
     fn validate(buf: &[u8]) -> bool {
         buf.iter().all(|&n| n <= 127)
     }
@@ -261,7 +261,7 @@ unsafe impl Slice for str {
 #[derive(Copy, Clone, Default, Debug)]
 pub struct WTF8;
 
-#[inline(always)]
+#[inline]
 fn wtf8_meaningful(m: Meaning) -> bool {
     match m {
         Meaning::Whole(_) | Meaning::LeadSurrogate(_)

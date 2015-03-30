@@ -48,7 +48,7 @@ fn full_cap<H>(size: usize) -> u32 {
 }
 
 impl<H> Buf32<H> {
-    #[inline(always)]
+    #[inline]
     pub unsafe fn with_capacity(mut cap: u32, h: H) -> Buf32<H> {
         if cap < MIN_CAP {
             cap = MIN_CAP;
@@ -70,12 +70,12 @@ impl<H> Buf32<H> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub unsafe fn new(h: H) -> Buf32<H> {
         Buf32::with_capacity(MIN_CAP, h)
     }
 
-    #[inline(always)]
+    #[inline]
     pub unsafe fn destroy(self) {
         let alloc_size = add_header::<H>(self.cap);
         heap::deallocate(self.ptr as *mut u8, alloc_size, MIN_ALIGN);
@@ -130,7 +130,7 @@ impl<H> Buf32<H> {
     /// Grow the capacity to at least `new_cap`.
     ///
     /// This will panic if the capacity calculation overflows `u32`.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn grow(self, new_cap: u32) -> Buf32<H> {
         if new_cap <= self.cap {
             return self;

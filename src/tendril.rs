@@ -233,7 +233,7 @@ impl<F> Tendril<F>
     }
 
     /// Is the backing buffer shared?
-    #[inline(always)]
+    #[inline]
     pub fn is_shared(&self) -> bool {
         let n = *self.ptr.get();
 
@@ -241,7 +241,7 @@ impl<F> Tendril<F>
     }
 
     /// Is the backing buffer shared with this other `Tendril`?
-    #[inline(always)]
+    #[inline]
     pub fn is_shared_with(&self, other: &Tendril<F>) -> bool {
         let n = *self.ptr.get();
 
@@ -444,7 +444,7 @@ impl<F> Tendril<F>
     ///
     /// Panics if the bytes are not available, or the suffix fails
     /// validation.
-    #[inline(always)]
+    #[inline]
     pub fn pop_front(&mut self, n: u32) {
         self.try_pop_front(n).unwrap()
     }
@@ -476,7 +476,7 @@ impl<F> Tendril<F>
     ///
     /// Panics if the bytes are not available, or the prefix fails
     /// validation.
-    #[inline(always)]
+    #[inline]
     pub fn pop_back(&mut self, n: u32) {
         self.try_pop_back(n).unwrap()
     }
@@ -592,7 +592,7 @@ impl<F> Tendril<F>
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
         unsafe {
             match *self.ptr.get() {
@@ -613,14 +613,14 @@ impl<F> Tendril<F>
         }
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn incref(&self) {
         let header = self.header();
         let refcount = (*header).refcount.get().checked_add(1).expect(OFLOW);
         (*header).refcount.set(refcount);
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn make_buf_shared(&self) {
         let p = *self.ptr.get();
         if p & 1 == 0 {
@@ -632,7 +632,7 @@ impl<F> Tendril<F>
         }
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn make_owned_with_capacity(&mut self, cap: u32) {
         let ptr = *self.ptr.get();
         if ptr <= MAX_INLINE_LEN || (ptr & 1) == 1 {
@@ -648,7 +648,7 @@ impl<F> Tendril<F>
         (*self.ptr.get() & !1) as *mut Header
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn assume_buf(&self) -> (Buf32<Header>, bool, u32) {
         let ptr = self.ptr.get();
         let header = self.header();
@@ -665,7 +665,7 @@ impl<F> Tendril<F>
         }, shared, offset)
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn inline(x: &[u8]) -> Tendril<F> {
         debug_assert!(x.len() <= MAX_INLINE_LEN);
 
@@ -681,7 +681,7 @@ impl<F> Tendril<F>
         t
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn owned(x: Buf32<Header>) -> Tendril<F> {
         Tendril {
             ptr: Cell::new(NonZero::new(x.ptr as usize)),
@@ -700,7 +700,7 @@ impl<F> Tendril<F>
         Tendril::owned(b)
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn shared(buf: Buf32<Header>, off: u32, len: u32) -> Tendril<F> {
         Tendril {
             ptr: Cell::new(NonZero::new((buf.ptr as usize) | 1)),
@@ -734,7 +734,7 @@ impl<F> Tendril<F>
 /// `Tendril`-related methods for Rust slices.
 pub trait SliceExt: fmt::Slice {
     /// Make a `Tendril` from this slice.
-    #[inline(always)]
+    #[inline]
     fn to_tendril(&self) -> Tendril<Self::Format> {
         Tendril::from_slice(self)
     }
@@ -744,13 +744,13 @@ impl SliceExt for str { }
 impl SliceExt for [u8] { }
 
 impl io::Write for Tendril<fmt::Bytes> {
-    #[inline(always)]
+    #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.push_slice(buf);
         Ok(buf.len())
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
         self.push_slice(buf);
         Ok(())
@@ -763,7 +763,7 @@ impl io::Write for Tendril<fmt::Bytes> {
 }
 
 impl strfmt::Display for Tendril<fmt::UTF8> {
-    #[inline(always)]
+    #[inline]
     fn fmt(&self, f: &mut strfmt::Formatter) -> strfmt::Result {
         <str as strfmt::Display>::fmt(&**self, f)
     }
@@ -772,14 +772,14 @@ impl strfmt::Display for Tendril<fmt::UTF8> {
 impl str::FromStr for Tendril<fmt::UTF8> {
     type Err = ();
 
-    #[inline(always)]
+    #[inline]
     fn from_str(s: &str) -> Result<Self, ()> {
         Ok(Tendril::from_slice(s))
     }
 }
 
 impl strfmt::Write for Tendril<fmt::UTF8> {
-    #[inline(always)]
+    #[inline]
     fn write_str(&mut self, s: &str) -> strfmt::Result {
         self.push_slice(s);
         Ok(())
