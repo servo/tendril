@@ -223,6 +223,18 @@ impl<F> Tendril<F>
         }
     }
 
+    /// Create a new, empty `Tendril` with a specified capacity.
+    #[inline]
+    pub fn with_capacity(capacity: u32) -> Tendril<F> {
+        let mut t: Tendril<F> = Tendril::new();
+        if capacity > MAX_INLINE_LEN as u32 {
+            unsafe {
+                t.make_owned_with_capacity(capacity);
+            }
+        }
+        t
+    }
+
     /// Get the length of the `Tendril`.
     ///
     /// This is named not to conflict with `len()` on the underlying
