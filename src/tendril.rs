@@ -638,7 +638,8 @@ impl<F> Tendril<F>
         if ptr <= MAX_INLINE_LEN || (ptr & 1) == 1 {
             *self = Tendril::owned_copy(self.as_byte_slice());
         }
-        let buf = self.assume_buf().0.grow(cap);
+        let mut buf = self.assume_buf().0;
+        buf.grow(cap);
         self.ptr.set(NonZero::new(buf.ptr as usize));
         self.aux.set(buf.cap);
     }

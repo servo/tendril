@@ -131,9 +131,10 @@ impl<H> Buf32<H> {
     ///
     /// This will panic if the capacity calculation overflows `u32`.
     #[inline]
-    pub unsafe fn grow(self, new_cap: u32) -> Buf32<H> {
+    pub unsafe fn grow(&mut self, new_cap: u32) {
         if new_cap <= self.cap {
-            return self;
+            self.cap = new_cap;
+            return;
         }
 
         let new_cap = new_cap.checked_next_power_of_two().expect(OFLOW);
@@ -146,11 +147,8 @@ impl<H> Buf32<H> {
             ::alloc::oom();
         }
 
-        Buf32 {
-            ptr: ptr as *mut H,
-            len: self.len,
-            cap: full_cap::<H>(alloc_size),
-        }
+        self.ptr = ptr as *mut H;
+        self.cap = full_cap::<H>(alloc_size);
     }
 }
 
@@ -162,17 +160,17 @@ mod test {
     #[test]
     fn smoke_test() {
         unsafe {
-            let b = Buf32::new(());
+            let mut b = Buf32::new(());
             assert_eq!(&[], b.data());
 
-            let mut b = b.grow(5);
+            b.grow(5);
             bytes::copy_memory(b.buffer_mut(), b"Hello");
 
             assert_eq!(&[], b.data());
             b.len = 5;
             assert_eq!(b"Hello", b.data());
 
-            let b = b.grow(1337);
+            b.grow(1337);
             assert!(b.cap >= 1337);
             assert_eq!(b"Hello", b.data());
 
