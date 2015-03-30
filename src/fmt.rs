@@ -246,7 +246,7 @@ unsafe impl Slice for str {
 
     #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
-        self.as_bytes()
+        str::as_bytes(self)
     }
 
     #[inline(always)]
