@@ -48,7 +48,9 @@ pub enum SubtendrilError {
 
 #[unsafe_no_drop_flag]
 #[repr(packed)]
-pub struct Tendril<F> {
+pub struct Tendril<F>
+    where F: fmt::Format,
+{
     ptr: Cell<NonZero<usize>>,
     len: u32,
     aux: Cell<u32>,
@@ -84,7 +86,8 @@ impl<F> Drop for Tendril<F>
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            if *self.ptr.get() <= MAX_INLINE_TAG {
+            let p = *self.ptr.get();
+            if p <= MAX_INLINE_TAG || p == mem::POST_DROP_USIZE {
                 return;
             }
 
@@ -289,6 +292,7 @@ impl<F> Tendril<F>
     #[inline(always)]
     pub fn as_superset<Super>(&self) -> &Tendril<Super>
         where F: fmt::SubsetOf<Super>,
+              Super: fmt::Format,
     {
         unsafe { mem::transmute(self) }
     }
@@ -297,6 +301,7 @@ impl<F> Tendril<F>
     #[inline(always)]
     pub fn into_superset<Super>(self) -> Tendril<Super>
         where F: fmt::SubsetOf<Super>,
+              Super: fmt::Format,
     {
         unsafe { mem::transmute(self) }
     }
