@@ -5,6 +5,7 @@
 // except according to those terms.
 
 use std::{raw, ptr, mem, intrinsics, hash, str, io};
+use std::str::CharRange;
 use std::marker::PhantomData;
 use std::cell::Cell;
 use std::ops::Deref;
@@ -793,6 +794,19 @@ impl strfmt::Write for Tendril<fmt::UTF8> {
 }
 
 impl Tendril<fmt::UTF8> {
+    /// Remove and return the first character, if any.
+    #[inline]
+    pub fn pop_front_char(&mut self) -> Option<char> {
+        if self.len32() == 0 {
+            return None;
+        }
+        let CharRange { ch, next } = self.char_range_at(0);
+        unsafe {
+            self.unsafe_pop_front(next as u32);
+        }
+        Some(ch)
+    }
+
     /// Remove and return a run of characters at the front of the `Tendril`
     /// which are classified the same according to the function `classify`.
     ///
@@ -1058,6 +1072,28 @@ mod test {
         assert!(t.try_push_bytes(b"\xED\xB2\xA9").is_ok());
         assert_eq!(b"\xED\xA0\xBB\xF0\x9F\x92\xA9", t.as_byte_slice());
         assert!(t.try_as_other_format::<fmt::UTF8>().is_err());
+    }
+
+    #[test]
+    fn front_char() {
+        let mut t = "".to_tendril();
+        assert_eq!(None, t.pop_front_char());
+        assert_eq!(None, t.pop_front_char());
+
+        let mut t = "abc".to_tendril();
+        assert_eq!(Some('a'), t.pop_front_char());
+        assert_eq!(Some('b'), t.pop_front_char());
+        assert_eq!(Some('c'), t.pop_front_char());
+        assert_eq!(None, t.pop_front_char());
+        assert_eq!(None, t.pop_front_char());
+
+        let mut t = "főo-a-longer-string-bar-baz".to_tendril();
+        assert_eq!(28, t.len());
+        assert_eq!(Some('f'), t.pop_front_char());
+        assert_eq!(Some('ő'), t.pop_front_char());
+        assert_eq!(Some('o'), t.pop_front_char());
+        assert_eq!(Some('-'), t.pop_front_char());
+        assert_eq!(23, t.len());
     }
 
     #[test]
