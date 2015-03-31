@@ -8,7 +8,7 @@ use std::{raw, ptr, mem, intrinsics, hash, str, io};
 use std::str::CharRange;
 use std::marker::PhantomData;
 use std::cell::Cell;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::iter::IntoIterator;
 use std::default::Default;
 use std::cmp::Ordering;
@@ -762,6 +762,15 @@ pub trait SliceExt: fmt::Slice {
 impl SliceExt for str { }
 impl SliceExt for [u8] { }
 
+impl DerefMut for Tendril<fmt::Bytes> {
+    #[inline]
+    fn deref_mut<'a>(&'a mut self) -> &'a mut [u8] {
+        unsafe {
+            mem::transmute(self.as_byte_slice())
+        }
+    }
+}
+
 impl io::Write for Tendril<fmt::Bytes> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -1136,5 +1145,15 @@ mod test {
                 }
             }
         }
+    }
+
+    #[test]
+    fn deref_mut() {
+        let mut t = "xyő".to_tendril().into_bytes();
+        t[3] = 0xff;
+        assert_eq!(b"xy\xC5\xFF", &*t);
+        assert!(t.try_as_other_format::<fmt::UTF8>().is_err());
+        t[3] = 0x8b;
+        assert_eq!("xyŋ", &**t.try_as_other_format::<fmt::UTF8>().unwrap());
     }
 }
