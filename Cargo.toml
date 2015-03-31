@@ -13,3 +13,6 @@ mac = "0"
 
 [dependencies.futf]
 git = "https://github.com/kmcallister/futf"
+
+[dev-dependencies]
+rand = "0"
