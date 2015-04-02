@@ -1,14 +1,14 @@
-# The sixth era of html5ever strings
+# tendril
 
-This will eventually be a Rust library implementing the goodies described
-below.  For now it's just a place to discuss the project.  Please open GitHub
-issues or find me on IRC if you have thoughts about the proposal.
+The code in this repo is **not ready for use**! For now it's just a place to
+discuss the project. Please open GitHub issues or find me on IRC if you have
+thoughts about the proposal.
 
 ## Introduction
 
-html5ever's API works mostly in terms of owned strings. The API consumer passes
-owned strings into the parser, and receives text content in the form of owned
-strings.
+[html5ever][]'s API works mostly in terms of owned strings. The API consumer
+passes owned strings into the parser, and receives text content in the form of
+owned strings.
 
 Originally these APIs all used `String`, but they have become more elaborate
 over time. For strings that need fast comparison, we have an [interning
@@ -16,11 +16,11 @@ system][] that is [working very well][]. Non-interned strings (mainly text
 nodes and attribute values) used `String` until the recent zero-copy parsing
 work ([PR #60][], [PR #114][]).
 
-I've started designing an owned, non-interned string type for html5ever, that
-would eventually replace both `String` and `IOBuf` in this capacity. It could
-also find use in other Rust programs dealing with either text or binary data.
+`Tendril` is an owned, non-interned string type for html5ever, that will
+eventually replace both `String` and `IOBuf` in this capacity. It could also
+find use in other Rust programs dealing with either text or binary data.
 
-## Requirements and solutions
+## Implemented
 
 ### Zero-copy parsing
 
@@ -47,7 +47,7 @@ encodings](https://github.com/servo/html5ever/issues/18), and UCS-2
 [`document.write`](https://github.com/servo/html5ever/issues/6).
 
 *Solution:* Use phantom types to **track a buffer's encoding statically**.
-Only UTF-8 will provide `Deref<Target=str>`. **Support [WTF-8][]** and provide
+Only UTF-8 provides `Deref<Target=str>`. **Support [WTF-8][]** and provide
 [zero-copy conversion](http://simonsapin.github.io/wtf-8/#converting-wtf-8-utf-8)
 to UTF-8 after checking for lone surrogates.
 
@@ -55,7 +55,7 @@ This library will integrate with rust-encoding's incremental conversion
 support.  Converting to/from UTF-8 may be one of the *only* operations
 supported on non-UTF-8 buffers.
 
-To make the library usable for non-textual data, we will also have a "null"
+To make the library usable for non-textual data, we also have a `Bytes`
 encoding, which provides `Deref<Target=[u8]>` and other APIs to mirror
 `Vec<u8>`.
 
@@ -80,6 +80,17 @@ terminated a tokenizer fast path. We should avoid heap allocations for these
 short strings.
 
 *Solution:* **store short strings directly inside** that 16-byte structure.
+
+## Not implemented yet
+
+### C compatible
+
+Clients of the html5ever C API should enjoy the same zero-copy parsing
+performance. (*work in progress*)
+
+*Solution:* Provide **a C API** for creating and using these refcounted strings.
+Conversion to (pointer, length) is provided as an `inline` function in a C
+header file.
 
 ### Ropes
 
@@ -114,15 +125,6 @@ additional overhead and complexity, if not a full copy.
 conversion can easily be parallelized, if we find a practical need to convert
 huge chunks of text all at once.
 
-### C compatible
-
-Clients of the html5ever C API should enjoy the same zero-copy parsing
-performance.
-
-*Solution:* Provide **a C API** for creating and using these refcounted strings.
-Conversion to (pointer, length) is provided as an `inline` function in a C
-header file.
-
 ### Sendable
 
 We don't need to share strings between threads, but we do need to move them.
@@ -153,18 +155,9 @@ metadata is chosen by the API consumer; it defaults to `()`, which has size
 zero. For any non-inline string, we can provide the associated metadata as well
 as a byte offset.
 
-[interning system]: https://github.com/servo/string-cache
-[working very well]: https://github.com/servo/servo/wiki/Meeting-2014-10-27#string-cache-and-h5ever-performance-update
-[PR #60]: https://github.com/servo/html5ever/pull/60
-[PR #114]: https://github.com/servo/html5ever/pull/114
-[WTF-8]: http://simonsapin.github.io/wtf-8/
-[rope]: http://en.wikipedia.org/wiki/Rope_%28data_structure%29
-[persistent data structure]: http://en.wikipedia.org/wiki/Persistent_data_structure
-[2-3 finger tree]: http://staff.city.ac.uk/~ross/papers/FingerTree.html
-
 ## Representation details
 
-A string comprises one `usize` field and two `u32` fields. There are four
+A `Tendril` comprises one `usize` field and two `u32` fields. There are four
 forms:
 
 form   | `ptr: usize`      | `len: u32`      | `aux: u32`
@@ -179,9 +172,8 @@ string contents. It should be clear that for each of these forms, we can build
 a (pointer, length) pair (i.e. a slice) without any additional memory access.
 
 The obvious representation for an empty string is `ptr == 0`, but we avoid this
-to take advantage of the [`NonZero` optimization][NonZero]. However, we will
-use `#[unsafe_no_drop_flag]`, so the `drop` method may see a string with `ptr
-== 0`. The above encoding handles this case without an additional branch.
+to take advantage of the [`NonZero` optimization][NonZero]. This means that
+`Option<Tendril>` takes the same amount of space as `Tendril`.
 
 The header on a non-inline string has a refcount and a capacity field, along
 with any metadata specified by the API consumer. However, an owned string
@@ -191,8 +183,8 @@ undefined until we clone the owned string, forming a shared string. At that
 point the capacity is saved in the header for later use in deallocation, or in
 conversion back to an owned string.
 
-When we clone an owned string, we must also set the LSB of the original pointer
-to `1` and copy 0 into the `aux` field. This will be accomplished using `Cell`.
+When we clone an owned string, we also set the LSB of the original pointer to
+`1` and copy 0 into the `aux` field. This is accomplished using `Cell`.
 
 It is possible that bit 1 of `ptr` is set even if the string has refcount 1.
 This will happen when slicing in place with a nonzero starting index. It's the
@@ -200,3 +192,12 @@ price we pay for having a 16-byte structure; we can't fit both capacity and
 offset.
 
 [NonZero]: http://doc.rust-lang.org/core/nonzero/struct.NonZero.html
+[html5ever]: https://github.com/servo/html5ever
+[interning system]: https://github.com/servo/string-cache
+[working very well]: https://github.com/servo/servo/wiki/Meeting-2014-10-27#string-cache-and-h5ever-performance-update
+[PR #60]: https://github.com/servo/html5ever/pull/60
+[PR #114]: https://github.com/servo/html5ever/pull/114
+[WTF-8]: http://simonsapin.github.io/wtf-8/
+[rope]: http://en.wikipedia.org/wiki/Rope_%28data_structure%29
+[persistent data structure]: http://en.wikipedia.org/wiki/Persistent_data_structure
+[2-3 finger tree]: http://staff.city.ac.uk/~ross/papers/FingerTree.html
