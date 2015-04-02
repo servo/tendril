@@ -337,7 +337,7 @@ unsafe impl Format for WTF8 {
                     insert_len: s.len() as u32,
                     insert_bytes: mem::uninitialized(),
                 };
-                bytes::copy_memory(&mut fixup.insert_bytes, s.as_bytes());
+                bytes::copy_memory(s.as_bytes(), &mut fixup.insert_bytes);
                 return fixup;
             }
         }

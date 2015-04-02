@@ -15,17 +15,8 @@ pub unsafe fn unsafe_slice<'a>(buf: &'a [u8], start: usize, new_len: usize) -> &
     slice::from_raw_parts(data.offset(start as isize), new_len)
 }
 
-#[allow(dead_code)]
-#[inline(always)]
-pub unsafe fn unsafe_slice_mut<'a>(buf: &'a mut [u8], start: usize, new_len: usize) -> &'a mut [u8] {
-    let raw::Slice { data, len } = buf.repr();
-    debug_assert!(start <= len);
-    debug_assert!(new_len <= (len - start));
-    slice::from_raw_parts_mut(data.offset(start as isize) as *mut u8, new_len)
-}
-
 #[inline(always)]
 pub unsafe fn copy_and_advance(dest: &mut *mut u8, src: &[u8]) {
-    intrinsics::copy_nonoverlapping(*dest, src.as_ptr(), src.len());
+    intrinsics::copy_nonoverlapping(src.as_ptr(), *dest, src.len());
     *dest = dest.offset(src.len() as isize)
 }

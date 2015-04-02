@@ -6,14 +6,8 @@
 
 //! Provides an unsafe owned buffer type, used in implementing `Tendril`.
 
-#![allow(dead_code, unused_imports)]
-
-use std::{raw, mem, str, ptr, cmp, intrinsics, u32};
+use std::{raw, mem, ptr, cmp, u32};
 use std::rt::heap;
-use std::marker::PhantomData;
-use std::cell::Cell;
-use std::ops::Deref;
-use alloc::oom;
 
 use OFLOW;
 
@@ -71,19 +65,9 @@ impl<H> Buf32<H> {
     }
 
     #[inline]
-    pub unsafe fn new(h: H) -> Buf32<H> {
-        Buf32::with_capacity(MIN_CAP, h)
-    }
-
-    #[inline]
     pub unsafe fn destroy(self) {
         let alloc_size = add_header::<H>(self.cap);
         heap::deallocate(self.ptr as *mut u8, alloc_size, MIN_ALIGN);
-    }
-
-    #[inline(always)]
-    pub unsafe fn header(&self) -> &H {
-        mem::transmute(self.ptr)
     }
 
     #[inline(always)]
@@ -100,31 +84,8 @@ impl<H> Buf32<H> {
     }
 
     #[inline(always)]
-    pub unsafe fn buffer_raw(&self) -> raw::Slice<u8> {
-        raw::Slice {
-            data: self.data_ptr(),
-            len: self.cap as usize,
-        }
-    }
-
-    #[inline(always)]
     pub unsafe fn data(&self) -> &[u8] {
         mem::transmute(self.data_raw())
-    }
-
-    #[inline(always)]
-    pub unsafe fn data_mut(&mut self) -> &mut [u8] {
-        mem::transmute(self.data_raw())
-    }
-
-    #[inline(always)]
-    pub unsafe fn buffer(&self) -> &[u8] {
-        mem::transmute(self.buffer_raw())
-    }
-
-    #[inline(always)]
-    pub unsafe fn buffer_mut(&mut self) -> &mut [u8] {
-        mem::transmute(self.buffer_raw())
     }
 
     /// Grow the capacity to at least `new_cap`.
@@ -154,16 +115,17 @@ impl<H> Buf32<H> {
 #[cfg(test)]
 mod test {
     use super::Buf32;
-    use std::slice::bytes;
+    use std::intrinsics;
 
     #[test]
     fn smoke_test() {
         unsafe {
-            let mut b = Buf32::new(());
+            let mut b = Buf32::with_capacity(0, ());
             assert_eq!(&[], b.data());
 
             b.grow(5);
-            bytes::copy_memory(b.buffer_mut(), b"Hello");
+            intrinsics::copy_nonoverlapping(b"Hello".as_ptr(),
+                b.data_raw().data as *mut u8, 5);
 
             assert_eq!(&[], b.data());
             b.len = 5;

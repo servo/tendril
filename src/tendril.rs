@@ -695,8 +695,7 @@ impl<F> Tendril<F>
             aux: mem::uninitialized(),
             marker: PhantomData,
         };
-        intrinsics::copy_nonoverlapping(&mut t.len as *mut u32 as *mut u8,
-                                        x.as_ptr(), len);
+        intrinsics::copy_nonoverlapping(x.as_ptr(), &mut t.len as *mut u32 as *mut u8, len);
         t
     }
 
@@ -714,7 +713,7 @@ impl<F> Tendril<F>
     unsafe fn owned_copy(x: &[u8]) -> Tendril<F> {
         let len32 = x.len() as u32;
         let mut b = Buf32::with_capacity(len32, Header::new());
-        intrinsics::copy_nonoverlapping(b.data_ptr(), x.as_ptr(), x.len());
+        intrinsics::copy_nonoverlapping(x.as_ptr(), b.data_ptr(), x.len());
         b.len = len32;
         Tendril::owned(b)
     }
