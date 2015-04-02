@@ -41,12 +41,37 @@ impl Header {
     }
 }
 
+/// Errors that can occur when slicing a `Tendril`.
 #[derive(Copy, Clone, Hash, Debug, PartialEq, Eq)]
 pub enum SubtendrilError {
     OutOfBounds,
     ValidationFailed,
 }
 
+/// Compact string type for zero-copy parsing.
+///
+/// `Tendril`s have the semantics of owned strings, but are sometimes views
+/// into shared buffers. When you mutate a `Tendril`, an owned copy is made
+/// if necessary. Further mutations occur in-place until the string becomes
+/// shared, e.g. with `clone()` or `subtendril()`.
+///
+/// Buffer sharing is accomplished through thread-local (non-atomic) reference
+/// counting, which has very low overhead. The Rust type system will prevent
+/// you at compile time from sending a `Tendril` between threads. We plan to
+/// relax this restriction in the future; see `README.md`.
+///
+/// Whereas `String` allocates in the heap for any non-empty string, `Tendril`
+/// can store small strings (up to 8 bytes) in-line, without a heap allocation.
+/// `Tendril` is also smaller than `String` on 64-bit platforms — 16 bytes
+/// versus 24.
+///
+/// The type parameter `F` specifies the format of the tendril, for example
+/// UTF-8 text or uninterpreted bytes. The parameter will be instantiated
+/// with one of the marker types from `tendril::fmt`. See the `StrTendril`
+/// and `ByteTendril` type aliases for two examples.
+///
+/// The maximum length of a `Tendril` is 4 GB. The library will panic if
+/// you attempt to go over the limit.
 #[unsafe_no_drop_flag]
 #[repr(packed)]
 pub struct Tendril<F>

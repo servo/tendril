@@ -4,6 +4,9 @@ The code in this repo is **not ready for use**! For now it's just a place to
 discuss the project. Please open GitHub issues or find me on IRC if you have
 thoughts about the proposal.
 
+If you'd like to examine the API in its current form, you can find
+[documentation online](https://kmcallister.github.io/docs/tendril/tendril/index.html).
+
 ## Introduction
 
 [html5ever][]'s API works mostly in terms of owned strings. The API consumer
