@@ -14,7 +14,6 @@
 //! `unsafe impl`.
 
 use std::{char, str, mem};
-use std::slice::bytes;
 use std::marker::{MarkerTrait, PhantomFn};
 use std::default::Default;
 
@@ -321,23 +320,24 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     unsafe fn fixup(lhs: &[u8], rhs: &[u8]) -> imp::Fixup {
+        const ERR: &'static str = "WTF8: internal error";
+
         if lhs.len() >= 3 && rhs.len() >= 3 {
             if let (Some(Codepoint { meaning: Meaning::LeadSurrogate(hi), .. }),
                     Some(Codepoint { meaning: Meaning::TrailSurrogate(lo), .. }))
                 = (futf::classify(lhs, lhs.len() - 1), futf::classify(rhs, 0))
             {
-                let n = 0x10000 + ((hi as u32) << 10) + (lo as u32);
-                // FIXME: don't allocate for the char
-                let s = format!("{}", char::from_u32(n).expect("WTF8: internal error"));
-                debug_assert!(s.len() <= 4);
-
                 let mut fixup = imp::Fixup {
                     drop_left: 3,
                     drop_right: 3,
-                    insert_len: s.len() as u32,
+                    insert_len: 0,
                     insert_bytes: mem::uninitialized(),
                 };
-                bytes::copy_memory(s.as_bytes(), &mut fixup.insert_bytes);
+
+                let n = 0x10000 + ((hi as u32) << 10) + (lo as u32);
+                fixup.insert_len = char::from_u32(n).expect(ERR)
+                    .encode_utf8(&mut fixup.insert_bytes).expect(ERR)
+                    as u32;
                 return fixup;
             }
         }
