@@ -121,13 +121,13 @@ mod test {
     fn smoke_test() {
         unsafe {
             let mut b = Buf32::with_capacity(0, ());
-            assert_eq!(&[], b.data());
+            assert_eq!(b"", b.data());
 
             b.grow(5);
             intrinsics::copy_nonoverlapping(b"Hello".as_ptr(),
                 b.data_raw().data as *mut u8, 5);
 
-            assert_eq!(&[], b.data());
+            assert_eq!(b"", b.data());
             b.len = 5;
             assert_eq!(b"Hello", b.data());
 
