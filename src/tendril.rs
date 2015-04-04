@@ -6,7 +6,6 @@
 
 use std::{raw, ptr, mem, intrinsics, hash, str, u32, io, slice, cmp};
 use std::borrow::Cow;
-use std::str::CharRange;
 use std::marker::PhantomData;
 use std::cell::Cell;
 use std::ops::{Deref, DerefMut};
@@ -815,18 +814,21 @@ impl SliceExt for str { }
 impl SliceExt for [u8] { }
 
 impl<F> Tendril<F>
-    where F: fmt::CharFormat,
+    where F: for<'a> fmt::CharFormat<'a>,
 {
     /// Remove and return the first character, if any.
     #[inline]
-    pub fn pop_front_char(&mut self) -> Option<char> {
-        if self.len32() == 0 {
-            return None;
-        }
+    pub fn pop_front_char<'a>(&'a mut self) -> Option<char> {
         unsafe {
-            let CharRange { ch, next } = F::char_range_at(self.as_byte_slice(), 0);
-            self.unsafe_pop_front(next as u32);
-            Some(ch)
+            let mut it = F::char_indices(self.as_byte_slice());
+            it.next().map(|(_, c)| {
+                if let Some((n, _)) = it.next() {
+                    self.unsafe_pop_front(n as u32);
+                } else {
+                    self.clear();
+                }
+                c
+            })
         }
     }
 
@@ -835,35 +837,33 @@ impl<F> Tendril<F>
     ///
     /// Returns `None` on an empty string.
     #[inline]
-    pub fn pop_front_char_run<C, R>(&mut self, mut classify: C)
+    pub fn pop_front_char_run<'a, C, R>(&'a mut self, mut classify: C)
         -> Option<(Tendril<F>, R)>
         where C: FnMut(char) -> R,
               R: PartialEq,
     {
-        if self.len32() == 0 {
-            return None;
+        let (class, first_mismatch);
+        {
+            let mut chars = unsafe {
+                F::char_indices(self.as_byte_slice())
+            };
+            let (_, first) = unwrap_or_return!(chars.next(), None);
+            class = classify(first);
+            first_mismatch = chars.find(|&(_, ch)| &classify(ch) != &class);
         }
-        let CharRange { ch: first, next: mut idx } = unsafe {
-            F::char_range_at(self.as_byte_slice(), 0)
-        };
-        let class = classify(first);
 
-        while idx < self.len32() as usize {
-            unsafe {
-                let CharRange { ch, next }
-                    = F::char_range_at(self.as_byte_slice(), idx);
-                if classify(ch) != class {
-                    let t = self.unsafe_subtendril(0, idx as u32);
-                    self.unsafe_pop_front(idx as u32);
-                    return Some((t, class));
-                }
-                idx = next;
+        match first_mismatch {
+            Some((idx, _)) => unsafe {
+                let t = self.unsafe_subtendril(0, idx as u32);
+                self.unsafe_pop_front(idx as u32);
+                Some((t, class))
+            },
+            None => {
+                let t = self.clone();
+                self.clear();
+                Some((t, class))
             }
         }
-
-        let t = self.clone();
-        self.clear();
-        Some((t, class))
     }
 
     /// Push a character, if it can be represented in this format.

@@ -19,15 +19,13 @@
 //! the format sneaks in. For that reason, these traits require
 //! `unsafe impl`.
 
-use std::{char, str, mem, slice};
-use std::str::CharRange;
+use std::{char, str, mem, slice, iter};
 use std::marker::{MarkerTrait, PhantomFn};
 use std::default::Default;
 
 use futf::{self, Codepoint, Meaning};
 
 use util::unsafe_slice;
-use OFLOW;
 
 /// Implementation details.
 ///
@@ -134,14 +132,16 @@ pub unsafe trait SliceFormat: Format {
 
 /// Indicates a format which contains characters from Unicode
 /// (all of it, or some proper subset).
-pub unsafe trait CharFormat: Format {
-    /// Get the character at some byte index, and the index of
-    /// the next character (which will equal `buf.len()` for
-    /// the last character).
+pub unsafe trait CharFormat<'a>: Format {
+    /// Iterator for characters and their byte indices.
+    type Iter: Iterator<Item=(usize, char)>;
+
+    /// Iterate over the characters of the string and their byte
+    /// indices.
     ///
     /// You may assume the buffer is *already validated* for `Format`
     /// and the index is the start of a valid character.
-    unsafe fn char_range_at(buf: &[u8], idx: usize) -> CharRange;
+    unsafe fn char_indices(buf: &'a [u8]) -> Self::Iter;
 
     /// Encode the character as bytes and pass them to a continuation.
     ///
@@ -229,18 +229,35 @@ unsafe fn from_u32_unchecked(n: u32) -> char {
     mem::transmute(n)
 }
 
-#[inline]
-unsafe fn single_byte_char_range(buf: &[u8], idx: usize) -> CharRange {
-    CharRange {
-        ch: from_u32_unchecked(*buf.get_unchecked(idx) as u32),
-        next: idx.checked_add(1).expect(OFLOW),
+pub struct SingleByteCharIndices<'a> {
+    inner: iter::Enumerate<slice::Iter<'a, u8>>,
+}
+
+impl<'a> Iterator for SingleByteCharIndices<'a> {
+    type Item = (usize, char);
+
+    #[inline]
+    fn next(&mut self) -> Option<(usize, char)> {
+        self.inner.next().map(|(i, &b)| unsafe {
+            (i, from_u32_unchecked(b as u32))
+        })
     }
 }
 
-unsafe impl CharFormat for ASCII {
+impl<'a> SingleByteCharIndices<'a> {
+    pub fn new(buf: &'a [u8]) -> SingleByteCharIndices<'a> {
+        SingleByteCharIndices {
+            inner: buf.iter().enumerate(),
+        }
+    }
+}
+
+unsafe impl<'a> CharFormat<'a> for ASCII {
+    type Iter = SingleByteCharIndices<'a>;
+
     #[inline]
-    unsafe fn char_range_at(buf: &[u8], idx: usize) -> CharRange {
-        single_byte_char_range(buf, idx)
+    unsafe fn char_indices(buf: &'a [u8]) -> SingleByteCharIndices<'a> {
+        SingleByteCharIndices::new(buf)
     }
 
     #[inline]
@@ -314,10 +331,12 @@ unsafe impl Slice for str {
     }
 }
 
-unsafe impl CharFormat for UTF8 {
+unsafe impl<'a> CharFormat<'a> for UTF8 {
+    type Iter = str::CharIndices<'a>;
+
     #[inline]
-    unsafe fn char_range_at(buf: &[u8], idx: usize) -> CharRange {
-        str::from_utf8_unchecked(buf).char_range_at(idx)
+    unsafe fn char_indices(buf: &'a [u8]) -> str::CharIndices<'a> {
+        str::from_utf8_unchecked(buf).char_indices()
     }
 
     #[inline]
@@ -458,10 +477,12 @@ unsafe impl Format for Latin1 {
     }
 }
 
-unsafe impl CharFormat for Latin1 {
-    #[inline(always)]
-    unsafe fn char_range_at(buf: &[u8], idx: usize) -> CharRange {
-        single_byte_char_range(buf, idx)
+unsafe impl<'a> CharFormat<'a> for Latin1 {
+    type Iter = SingleByteCharIndices<'a>;
+
+    #[inline]
+    unsafe fn char_indices(buf: &'a [u8]) -> SingleByteCharIndices<'a> {
+        SingleByteCharIndices::new(buf)
     }
 
     #[inline]
