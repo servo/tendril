@@ -13,11 +13,15 @@
 //! the format sneaks in. For that reason, these traits require
 //! `unsafe impl`.
 
-use std::{char, str, mem};
+use std::{char, str, mem, slice};
+use std::str::CharRange;
 use std::marker::{MarkerTrait, PhantomFn};
 use std::default::Default;
 
 use futf::{self, Codepoint, Meaning};
+
+use util::unsafe_slice;
+use OFLOW;
 
 /// Implementation details.
 ///
@@ -122,6 +126,24 @@ pub unsafe trait SliceFormat: Format {
     type Slice: ?Sized + Slice<Format = Self>;
 }
 
+/// Indicates a format which contains characters from Unicode
+/// (all of it, or some proper subset).
+pub unsafe trait CharFormat: Format {
+    /// Get the character at some byte index, and the index of
+    /// the next character (which will equal `buf.len()` for
+    /// the last character).
+    ///
+    /// You may assume the buffer is *already validated* for `Format`
+    /// and the index is the start of a valid character.
+    unsafe fn char_range_at(buf: &[u8], idx: usize) -> CharRange;
+
+    /// Encode the character as bytes and pass them to a continuation.
+    ///
+    /// Returns `Err(())` iff the character cannot be represented.
+    fn encode_char<F>(ch: char, cont: F) -> Result<(), ()>
+        where F: FnOnce(&[u8]);
+}
+
 /// Indicates a Rust slice type that has a corresponding format.
 pub unsafe trait Slice {
     type Format: SliceFormat<Slice = Self>;
@@ -195,6 +217,32 @@ unsafe impl Format for ASCII {
 
 unsafe impl SubsetOf<UTF8> for ASCII { }
 
+#[inline(always)]
+unsafe fn from_u32_unchecked(n: u32) -> char {
+    mem::transmute(n)
+}
+
+unsafe impl CharFormat for ASCII {
+    #[inline(always)]
+    unsafe fn char_range_at(buf: &[u8], idx: usize) -> CharRange {
+        CharRange {
+            ch: from_u32_unchecked(*buf.get_unchecked(idx) as u32),
+            next: idx.checked_add(1).expect(OFLOW),
+        }
+    }
+
+    #[inline]
+    fn encode_char<F>(ch: char, cont: F) -> Result<(), ()>
+        where F: FnOnce(&[u8])
+    {
+        let n = ch as u32;
+        if n > 0x7F { return Err(()); }
+        let n = n as u8;
+        cont(slice::ref_slice(&n));
+        Ok(())
+    }
+}
+
 /// Marker type for UTF-8 text.
 #[derive(Copy, Clone, Default, Debug)]
 pub struct UTF8;
@@ -251,6 +299,26 @@ unsafe impl Slice for str {
     #[inline(always)]
     unsafe fn from_bytes(x: &[u8]) -> &str {
         str::from_utf8_unchecked(x)
+    }
+}
+
+unsafe impl CharFormat for UTF8 {
+    #[inline]
+    unsafe fn char_range_at(buf: &[u8], idx: usize) -> CharRange {
+        str::from_utf8_unchecked(buf).char_range_at(idx)
+    }
+
+    #[inline]
+    fn encode_char<F>(ch: char, cont: F) -> Result<(), ()>
+        where F: FnOnce(&[u8])
+    {
+        unsafe {
+            let mut buf: [u8; 4] = mem::uninitialized();
+            let n = ch.encode_utf8(&mut buf).expect("Tendril: internal error");
+            debug_assert!(n <= 4);
+            cont(unsafe_slice(&buf, 0, n));
+            Ok(())
+        }
     }
 }
 

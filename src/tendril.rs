@@ -808,6 +808,67 @@ pub trait SliceExt: fmt::Slice {
 impl SliceExt for str { }
 impl SliceExt for [u8] { }
 
+impl<F> Tendril<F>
+    where F: fmt::CharFormat,
+{
+    /// Remove and return the first character, if any.
+    #[inline]
+    pub fn pop_front_char(&mut self) -> Option<char> {
+        if self.len32() == 0 {
+            return None;
+        }
+        unsafe {
+            let CharRange { ch, next } = F::char_range_at(self.as_byte_slice(), 0);
+            self.unsafe_pop_front(next as u32);
+            Some(ch)
+        }
+    }
+
+    /// Remove and return a run of characters at the front of the `Tendril`
+    /// which are classified the same according to the function `classify`.
+    ///
+    /// Returns `None` on an empty string.
+    #[inline]
+    pub fn pop_front_char_run<C, R>(&mut self, mut classify: C)
+        -> Option<(Tendril<F>, R)>
+        where C: FnMut(char) -> R,
+              R: PartialEq,
+    {
+        if self.len32() == 0 {
+            return None;
+        }
+        let CharRange { ch: first, next: mut idx } = unsafe {
+            F::char_range_at(self.as_byte_slice(), 0)
+        };
+        let class = classify(first);
+
+        while idx < self.len32() as usize {
+            unsafe {
+                let CharRange { ch, next }
+                    = F::char_range_at(self.as_byte_slice(), idx);
+                if classify(ch) != class {
+                    let t = self.unsafe_subtendril(0, idx as u32);
+                    self.unsafe_pop_front(idx as u32);
+                    return Some((t, class));
+                }
+                idx = next;
+            }
+        }
+
+        let t = self.clone();
+        self.clear();
+        Some((t, class))
+    }
+
+    /// Push a character, if it can be represented in this format.
+    #[inline]
+    pub fn try_push_char(&mut self, c: char) -> Result<(), ()> {
+        F::encode_char(c, |b| unsafe {
+            self.push_bytes_without_validating(b);
+        })
+    }
+}
+
 impl DerefMut for Tendril<fmt::Bytes> {
     #[inline]
     fn deref_mut<'a>(&'a mut self) -> &'a mut [u8] {
@@ -919,51 +980,6 @@ impl Tendril<fmt::UTF8> {
     {
         let mut ret = Tendril::new();
         encoding.encode_to(&*self, trap, &mut ret).map(|_| ret)
-    }
-
-    /// Remove and return the first character, if any.
-    #[inline]
-    pub fn pop_front_char(&mut self) -> Option<char> {
-        if self.len32() == 0 {
-            return None;
-        }
-        let CharRange { ch, next } = self.char_range_at(0);
-        unsafe {
-            self.unsafe_pop_front(next as u32);
-        }
-        Some(ch)
-    }
-
-    /// Remove and return a run of characters at the front of the `Tendril`
-    /// which are classified the same according to the function `classify`.
-    ///
-    /// Returns `None` on an empty string.
-    #[inline]
-    pub fn pop_front_char_run<C, R>(&mut self, mut classify: C)
-        -> Option<(Tendril<fmt::UTF8>, R)>
-        where C: FnMut(char) -> R,
-              R: PartialEq,
-    {
-        let (class, first_mismatch);
-        {
-            let mut chars = self.char_indices();
-            let (_, first) = unwrap_or_return!(chars.next(), None);
-            class = classify(first);
-            first_mismatch = chars.find(|&(_, ch)| &classify(ch) != &class);
-        }
-
-        match first_mismatch {
-            Some((idx, _)) => unsafe {
-                let t = self.unsafe_subtendril(0, idx as u32);
-                self.unsafe_pop_front(idx as u32);
-                Some((t, class))
-            },
-            None => {
-                let t = self.clone();
-                self.clear();
-                Some((t, class))
-            }
-        }
     }
 
     #[inline]
@@ -1323,5 +1339,30 @@ mod test {
         let t = b"x \xff y".to_tendril();
         assert_eq!("x \u{fffd} y",
             &*t.decode(all::UTF_8, DecoderTrap::Replace).unwrap());
+    }
+
+    #[test]
+    fn ascii() {
+        fn mk(x: &[u8]) -> Tendril<fmt::ASCII> {
+            x.to_tendril().try_into_other_format().unwrap()
+        }
+
+        let mut t = mk(b"xyz");
+        assert_eq!(Some('x'), t.pop_front_char());
+        assert_eq!(Some('y'), t.pop_front_char());
+        assert_eq!(Some('z'), t.pop_front_char());
+        assert_eq!(None, t.pop_front_char());
+
+        let mut t = mk(b" \t xyz");
+        assert!(Some((mk(b" \t "), true))
+            == t.pop_front_char_run(char::is_whitespace));
+        assert!(Some((mk(b"xyz"), false))
+            == t.pop_front_char_run(char::is_whitespace));
+        assert!(t.pop_front_char_run(char::is_whitespace).is_none());
+
+        let mut t = Tendril::<fmt::ASCII>::new();
+        assert!(t.try_push_char('x').is_ok());
+        assert!(t.try_push_char('\0').is_ok());
+        assert!(t.try_push_char('\u{a0}').is_err());
     }
 }
