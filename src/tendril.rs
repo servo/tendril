@@ -4,7 +4,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::{raw, ptr, mem, intrinsics, hash, str, io};
+use std::{raw, ptr, mem, intrinsics, hash, str, u32, io, slice, cmp};
+use std::borrow::Cow;
 use std::str::CharRange;
 use std::marker::PhantomData;
 use std::cell::Cell;
@@ -15,6 +16,7 @@ use std::cmp::Ordering;
 use std::fmt as strfmt;
 
 use core::nonzero::NonZero;
+use encoding::{self, EncodingRef, DecoderTrap, EncoderTrap};
 
 use buf32::{self, Buf32};
 use fmt::{self, Slice};
@@ -258,6 +260,26 @@ impl<F> Tendril<F>
             }
         }
         t
+    }
+
+    /// Reserve space for additional bytes.
+    ///
+    /// This is only a suggestion. There are cases where `Tendril` will
+    /// decline to allocate until the buffer is actually modified.
+    #[inline]
+    pub fn reserve(&mut self, additional: u32) {
+        if self.is_shared() {
+            // Don't grow a shared tendril because we'd have to copy
+            // right away.
+            return;
+        }
+
+        let new_len = self.len32().checked_add(additional).expect(OFLOW);
+        if new_len > MAX_INLINE_LEN as u32 {
+            unsafe {
+                self.make_owned_with_capacity(new_len);
+            }
+        }
     }
 
     /// Get the length of the `Tendril`.
@@ -814,6 +836,37 @@ impl io::Write for Tendril<fmt::Bytes> {
     }
 }
 
+impl encoding::ByteWriter for Tendril<fmt::Bytes> {
+    #[inline]
+    fn write_byte(&mut self, b: u8) {
+        self.push_slice(slice::ref_slice(&b));
+    }
+
+    #[inline]
+    fn write_bytes(&mut self, v: &[u8]) {
+        self.push_slice(v);
+    }
+
+    #[inline]
+    fn writer_hint(&mut self, additional: usize) {
+        self.reserve(cmp::min(u32::MAX as usize, additional) as u32);
+    }
+}
+
+impl Tendril<fmt::Bytes> {
+    /// Decode from some character encoding into UTF-8.
+    ///
+    /// See the [rust-encoding docs](https://lifthrasiir.github.io/rust-encoding/encoding/)
+    /// for more information.
+    #[inline]
+    pub fn decode(&self, encoding: EncodingRef, trap: DecoderTrap)
+        -> Result<Tendril<fmt::UTF8>, Cow<'static, str>>
+    {
+        let mut ret = Tendril::new();
+        encoding.decode_to(&*self, trap, &mut ret).map(|_| ret)
+    }
+}
+
 impl strfmt::Display for Tendril<fmt::UTF8> {
     #[inline]
     fn fmt(&self, f: &mut strfmt::Formatter) -> strfmt::Result {
@@ -838,7 +891,36 @@ impl strfmt::Write for Tendril<fmt::UTF8> {
     }
 }
 
+impl encoding::StringWriter for Tendril<fmt::UTF8> {
+    #[inline]
+    fn write_char(&mut self, c: char) {
+        self.push_char(c);
+    }
+
+    #[inline]
+    fn write_str(&mut self, s: &str) {
+        self.push_slice(s);
+    }
+
+    #[inline]
+    fn writer_hint(&mut self, additional: usize) {
+        self.reserve(cmp::min(u32::MAX as usize, additional) as u32);
+    }
+}
+
 impl Tendril<fmt::UTF8> {
+    /// Encode from UTF-8 into some other character encoding.
+    ///
+    /// See the [rust-encoding docs](https://lifthrasiir.github.io/rust-encoding/encoding/)
+    /// for more information.
+    #[inline]
+    pub fn encode(&self, encoding: EncodingRef, trap: EncoderTrap)
+        -> Result<Tendril<fmt::Bytes>, Cow<'static, str>>
+    {
+        let mut ret = Tendril::new();
+        encoding.encode_to(&*self, trap, &mut ret).map(|_| ret)
+    }
+
     /// Remove and return the first character, if any.
     #[inline]
     pub fn pop_front_char(&mut self) -> Option<char> {
@@ -1202,5 +1284,44 @@ mod test {
         t.push_char('\u{1f4a9}');
         assert_eq!("xyzoő\u{a66e}\u{1f4a9}", &*t);
         assert_eq!(t.len(), 13);
+    }
+
+    #[test]
+    fn encode() {
+        use encoding::{all, EncoderTrap};
+
+        let t = "안녕하세요 러스트".to_tendril();
+        assert_eq!(b"\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\xbf\xe4\x20\xb7\xaf\xbd\xba\xc6\xae",
+            &*t.encode(all::WINDOWS_949, EncoderTrap::Strict).unwrap());
+
+        let t = "Энергия пробуждения ия-я-я! \u{a66e}".to_tendril();
+        assert_eq!(b"\xfc\xce\xc5\xd2\xc7\xc9\xd1 \xd0\xd2\xcf\xc2\xd5\xd6\xc4\xc5\xce\
+                     \xc9\xd1 \xc9\xd1\x2d\xd1\x2d\xd1\x21 ?",
+            &*t.encode(all::KOI8_U, EncoderTrap::Replace).unwrap());
+
+        let t = "\u{1f4a9}".to_tendril();
+        assert!(t.encode(all::WINDOWS_1252, EncoderTrap::Strict).is_err());
+    }
+
+    #[test]
+    fn decode() {
+        use encoding::{all, DecoderTrap};
+
+        let t = b"\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\
+                  \xbf\xe4\x20\xb7\xaf\xbd\xba\xc6\xae".to_tendril();
+        assert_eq!("안녕하세요 러스트",
+            &*t.decode(all::WINDOWS_949, DecoderTrap::Strict).unwrap());
+
+        let t = b"\xfc\xce\xc5\xd2\xc7\xc9\xd1 \xd0\xd2\xcf\xc2\xd5\xd6\xc4\xc5\xce\
+                  \xc9\xd1 \xc9\xd1\x2d\xd1\x2d\xd1\x21".to_tendril();
+        assert_eq!("Энергия пробуждения ия-я-я!",
+            &*t.decode(all::KOI8_U, DecoderTrap::Replace).unwrap());
+
+        let t = b"x \xff y".to_tendril();
+        assert!(t.decode(all::UTF_8, DecoderTrap::Strict).is_err());
+
+        let t = b"x \xff y".to_tendril();
+        assert_eq!("x \u{fffd} y",
+            &*t.decode(all::UTF_8, DecoderTrap::Replace).unwrap());
     }
 }

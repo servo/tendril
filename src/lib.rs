@@ -12,6 +12,7 @@ extern crate alloc;
 extern crate core;
 #[macro_use] extern crate mac;
 extern crate futf;
+extern crate encoding;
 
 #[cfg(test)]
 extern crate test;
