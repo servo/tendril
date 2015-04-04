@@ -388,9 +388,10 @@ impl<F> Tendril<F>
         }
     }
 
-    /// View as another format, if the `Tendril` conforms to that format.
+    /// View as another format, if the bytes of the `Tendril` are valid for
+    /// that format.
     #[inline]
-    pub fn try_as_other_format<Other>(&self) -> Result<&Tendril<Other>, ()>
+    pub fn try_reinterpret_view<Other>(&self) -> Result<&Tendril<Other>, ()>
         where Other: fmt::Format,
     {
         match Other::validate(self.as_byte_slice()) {
@@ -406,7 +407,7 @@ impl<F> Tendril<F>
     ///
     /// See the `encode` and `decode` methods for character encoding conversion.
     #[inline]
-    pub fn try_into_other_format<Other>(self) -> Result<Tendril<Other>, Self>
+    pub fn try_reinterpret<Other>(self) -> Result<Tendril<Other>, Self>
         where Other: fmt::Format,
     {
         match Other::validate(self.as_byte_slice()) {
@@ -553,7 +554,7 @@ impl<F> Tendril<F>
 
     /// View as another format, without validating.
     #[inline(always)]
-    pub unsafe fn as_other_format_without_validating<Other>(&self) -> &Tendril<Other>
+    pub unsafe fn reinterpret_view_without_validating<Other>(&self) -> &Tendril<Other>
         where Other: fmt::Format,
     {
         mem::transmute(self)
@@ -561,7 +562,7 @@ impl<F> Tendril<F>
 
     /// Convert into another format, without validating.
     #[inline(always)]
-    pub unsafe fn into_other_format_without_validating<Other>(self) -> Tendril<Other>
+    pub unsafe fn reinterpret_without_validating<Other>(self) -> Tendril<Other>
         where Other: fmt::Format,
     {
         mem::transmute(self)
@@ -1155,16 +1156,16 @@ mod test {
         assert_eq!(&[0x66, 0x6F, 0x6F].to_tendril(), "foo".to_tendril().as_bytes());
         assert_eq!([0x66, 0x6F, 0x6F].to_tendril(), "foo".to_tendril().into_bytes());
 
-        let ascii: Tendril<fmt::ASCII> = b"hello".to_tendril().try_into_other_format().unwrap();
+        let ascii: Tendril<fmt::ASCII> = b"hello".to_tendril().try_reinterpret().unwrap();
         assert_eq!(&"hello".to_tendril(), ascii.as_superset());
         assert_eq!("hello".to_tendril(), ascii.clone().into_superset());
 
-        assert!(b"\xFF".to_tendril().try_into_other_format::<fmt::ASCII>().is_err());
+        assert!(b"\xFF".to_tendril().try_reinterpret::<fmt::ASCII>().is_err());
 
         let ascii: Tendril<fmt::ASCII> = "hello".to_tendril().try_into_subset().unwrap();
         assert_eq!(b"hello", &**ascii.as_bytes());
 
-        assert!("ő".to_tendril().try_into_other_format::<fmt::ASCII>().is_err());
+        assert!("ő".to_tendril().try_reinterpret::<fmt::ASCII>().is_err());
     }
 
     #[test]
@@ -1199,11 +1200,11 @@ mod test {
 
         let t: Tendril<fmt::WTF8>
             = Tendril::try_from_byte_slice(b"\xED\xA0\xBD\xEA\x99\xAE").unwrap();
-        assert!(b"\xED\xA0\xBD".to_tendril().try_into_other_format().unwrap()
+        assert!(b"\xED\xA0\xBD".to_tendril().try_reinterpret().unwrap()
             == t.subtendril(0, 3));
-        assert!(b"\xEA\x99\xAE".to_tendril().try_into_other_format().unwrap()
+        assert!(b"\xEA\x99\xAE".to_tendril().try_reinterpret().unwrap()
             == t.subtendril(3, 3));
-        assert!(t.try_as_other_format::<fmt::UTF8>().is_err());
+        assert!(t.try_reinterpret_view::<fmt::UTF8>().is_err());
 
         assert!(t.try_subtendril(0, 1).is_err());
         assert!(t.try_subtendril(0, 2).is_err());
@@ -1217,7 +1218,7 @@ mod test {
         let mut t: Tendril<fmt::WTF8> = Tendril::try_from_byte_slice(b"\xED\xA0\xBD").unwrap();
         assert!(t.try_push_bytes(b"\xED\xB2\xA9").is_ok());
         assert_eq!(b"\xF0\x9F\x92\xA9", t.as_byte_slice());
-        assert!(t.try_as_other_format::<fmt::UTF8>().is_ok());
+        assert!(t.try_reinterpret_view::<fmt::UTF8>().is_ok());
 
         // unpaired surrogates
         let mut t: Tendril<fmt::WTF8> = Tendril::try_from_byte_slice(b"\xED\xA0\xBB").unwrap();
@@ -1228,7 +1229,7 @@ mod test {
         assert_eq!(b"\xED\xA0\xBB\xED\xA0\xBD", t.as_byte_slice());
         assert!(t.try_push_bytes(b"\xED\xB2\xA9").is_ok());
         assert_eq!(b"\xED\xA0\xBB\xF0\x9F\x92\xA9", t.as_byte_slice());
-        assert!(t.try_as_other_format::<fmt::UTF8>().is_err());
+        assert!(t.try_reinterpret_view::<fmt::UTF8>().is_err());
     }
 
     #[test]
@@ -1288,9 +1289,9 @@ mod test {
         let mut t = "xyő".to_tendril().into_bytes();
         t[3] = 0xff;
         assert_eq!(b"xy\xC5\xFF", &*t);
-        assert!(t.try_as_other_format::<fmt::UTF8>().is_err());
+        assert!(t.try_reinterpret_view::<fmt::UTF8>().is_err());
         t[3] = 0x8b;
-        assert_eq!("xyŋ", &**t.try_as_other_format::<fmt::UTF8>().unwrap());
+        assert_eq!("xyŋ", &**t.try_reinterpret_view::<fmt::UTF8>().unwrap());
     }
 
     #[test]
@@ -1349,7 +1350,7 @@ mod test {
     #[test]
     fn ascii() {
         fn mk(x: &[u8]) -> Tendril<fmt::ASCII> {
-            x.to_tendril().try_into_other_format().unwrap()
+            x.to_tendril().try_reinterpret().unwrap()
         }
 
         let mut t = mk(b"xyz");
@@ -1375,7 +1376,7 @@ mod test {
     #[test]
     fn latin1() {
         fn mk(x: &[u8]) -> Tendril<fmt::Latin1> {
-            x.to_tendril().try_into_other_format().unwrap()
+            x.to_tendril().try_reinterpret().unwrap()
         }
 
         let mut t = mk(b"\xd8_\xd8");
