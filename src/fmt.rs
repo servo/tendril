@@ -20,7 +20,6 @@
 //! `unsafe impl`.
 
 use std::{char, str, mem, slice, iter};
-use std::marker::{MarkerTrait, PhantomFn};
 use std::default::Default;
 
 use futf::{self, Codepoint, Meaning};
@@ -62,7 +61,7 @@ pub mod imp {
 ///
 /// The type implementing this trait is usually not instantiated.
 /// It's used with a phantom type parameter of `Tendril`.
-pub unsafe trait Format: MarkerTrait {
+pub unsafe trait Format {
     /// Check whether the buffer is valid for this format.
     fn validate(buf: &[u8]) -> bool;
 
@@ -109,7 +108,7 @@ pub unsafe trait Format: MarkerTrait {
 ///
 /// The subset format can be converted to the superset format
 /// for free.
-pub unsafe trait SubsetOf<Super>: Format + PhantomFn<Super>
+pub unsafe trait SubsetOf<Super>: Format
     where Super: Format,
 {
     /// Validate the *other* direction of conversion; check if
