@@ -400,6 +400,11 @@ impl<F> Tendril<F>
     }
 
     /// Convert into another format, if the `Tendril` conforms to that format.
+    ///
+    /// This only re-validates the existing bytes under the new format. It
+    /// will *not* change the byte content of the tendril!
+    ///
+    /// See the `encode` and `decode` methods for character encoding conversion.
     #[inline]
     pub fn try_into_other_format<Other>(self) -> Result<Tendril<Other>, Self>
         where Other: fmt::Format,
@@ -1364,5 +1369,36 @@ mod test {
         assert!(t.try_push_char('x').is_ok());
         assert!(t.try_push_char('\0').is_ok());
         assert!(t.try_push_char('\u{a0}').is_err());
+        assert_eq!(b"x\0", t.as_byte_slice());
+    }
+
+    #[test]
+    fn latin1() {
+        fn mk(x: &[u8]) -> Tendril<fmt::Latin1> {
+            x.to_tendril().try_into_other_format().unwrap()
+        }
+
+        let mut t = mk(b"\xd8_\xd8");
+        assert_eq!(Some('Ø'), t.pop_front_char());
+        assert_eq!(Some('_'), t.pop_front_char());
+        assert_eq!(Some('Ø'), t.pop_front_char());
+        assert_eq!(None, t.pop_front_char());
+
+        let mut t = mk(b" \t \xfe\xa7z");
+        assert!(Some((mk(b" \t "), true))
+            == t.pop_front_char_run(char::is_whitespace));
+        assert!(Some((mk(b"\xfe\xa7z"), false))
+            == t.pop_front_char_run(char::is_whitespace));
+        assert!(t.pop_front_char_run(char::is_whitespace).is_none());
+
+        let mut t = Tendril::<fmt::Latin1>::new();
+        assert!(t.try_push_char('x').is_ok());
+        assert!(t.try_push_char('\0').is_ok());
+        assert!(t.try_push_char('\u{a0}').is_ok());
+        assert!(t.try_push_char('ő').is_err());
+        assert!(t.try_push_char('я').is_err());
+        assert!(t.try_push_char('\u{a66e}').is_err());
+        assert!(t.try_push_char('\u{1f4a9}').is_err());
+        assert_eq!(b"x\0\xa0", t.as_byte_slice());
     }
 }

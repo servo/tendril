@@ -7,7 +7,13 @@
 //! Marker types for formats.
 //!
 //! This module defines the types and traits used to mark a `Tendril`
-//! with the format of data it contains.
+//! with the format of data it contains. It includes those formats
+//! for which `Tendril` supports at least some operations without
+//! conversion.
+//!
+//! To convert a string tendril to/from a byte tendril in an arbitrary
+//! character encoding, see the `encode` and `decode` methods on
+//! `Tendril`.
 //!
 //! `Tendril` operations may become memory-unsafe if data invalid for
 //! the format sneaks in. For that reason, these traits require
@@ -216,19 +222,25 @@ unsafe impl Format for ASCII {
 }
 
 unsafe impl SubsetOf<UTF8> for ASCII { }
+unsafe impl SubsetOf<Latin1> for ASCII { }
 
 #[inline(always)]
 unsafe fn from_u32_unchecked(n: u32) -> char {
     mem::transmute(n)
 }
 
+#[inline]
+unsafe fn single_byte_char_range(buf: &[u8], idx: usize) -> CharRange {
+    CharRange {
+        ch: from_u32_unchecked(*buf.get_unchecked(idx) as u32),
+        next: idx.checked_add(1).expect(OFLOW),
+    }
+}
+
 unsafe impl CharFormat for ASCII {
-    #[inline(always)]
+    #[inline]
     unsafe fn char_range_at(buf: &[u8], idx: usize) -> CharRange {
-        CharRange {
-            ch: from_u32_unchecked(*buf.get_unchecked(idx) as u32),
-            next: idx.checked_add(1).expect(OFLOW),
-        }
+        single_byte_char_range(buf, idx)
     }
 
     #[inline]
@@ -411,5 +423,55 @@ unsafe impl Format for WTF8 {
         }
 
         Default::default()
+    }
+}
+
+/// Marker type for the single-byte encoding of the first 256 Unicode codepoints.
+///
+/// This is IANA's "ISO-8859-1". It's ISO's "ISO 8859-1" with the addition of the
+/// C0 and C1 control characters from ECMA-48 / ISO 6429.
+///
+/// Not to be confused with WHATWG's "latin1" or "iso8859-1" labels (or the
+/// many other aliases), which actually stand for Windows-1252.
+#[derive(Copy, Clone, Default, Debug)]
+pub struct Latin1;
+
+unsafe impl Format for Latin1 {
+    #[inline(always)]
+    fn validate(_: &[u8]) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn validate_prefix(_: &[u8]) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn validate_suffix(_: &[u8]) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn validate_subseq(_: &[u8]) -> bool {
+        true
+    }
+}
+
+unsafe impl CharFormat for Latin1 {
+    #[inline(always)]
+    unsafe fn char_range_at(buf: &[u8], idx: usize) -> CharRange {
+        single_byte_char_range(buf, idx)
+    }
+
+    #[inline]
+    fn encode_char<F>(ch: char, cont: F) -> Result<(), ()>
+        where F: FnOnce(&[u8])
+    {
+        let n = ch as u32;
+        if n > 0xFF { return Err(()); }
+        let n = n as u8;
+        cont(slice::ref_slice(&n));
+        Ok(())
     }
 }
