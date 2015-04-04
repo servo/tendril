@@ -883,6 +883,15 @@ impl Tendril<fmt::UTF8> {
             }
         }
     }
+
+    #[inline]
+    pub fn push_char(&mut self, c: char) {
+        unsafe {
+            let mut buf: [u8; 4] = mem::uninitialized();
+            let n = c.encode_utf8(&mut buf).expect("Tendril::push_char: internal error");
+            self.push_bytes_without_validating(unsafe_slice(&buf, 0, n));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1179,5 +1188,19 @@ mod test {
         assert!(t.try_as_other_format::<fmt::UTF8>().is_err());
         t[3] = 0x8b;
         assert_eq!("xyŋ", &**t.try_as_other_format::<fmt::UTF8>().unwrap());
+    }
+
+    #[test]
+    fn push_char() {
+        let mut t = "xyz".to_tendril();
+        t.push_char('o');
+        assert_eq!("xyzo", &*t);
+        t.push_char('ő');
+        assert_eq!("xyzoő", &*t);
+        t.push_char('\u{a66e}');
+        assert_eq!("xyzoő\u{a66e}", &*t);
+        t.push_char('\u{1f4a9}');
+        assert_eq!("xyzoő\u{a66e}\u{1f4a9}", &*t);
+        assert_eq!(t.len(), 13);
     }
 }
