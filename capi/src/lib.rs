@@ -11,7 +11,7 @@ extern crate libc;
 extern crate tendril;
 
 use tendril::{ByteTendril, StrTendril};
-use std::{mem, ptr, raw};
+use std::{mem, raw};
 
 // Link the C glue code
 #[link_name="tendril_cglue"]
@@ -32,7 +32,7 @@ fn tendril_sub(t: *mut ByteTendril,
 
 #[no_mangle] pub unsafe extern "C"
 fn tendril_destroy(t: *mut ByteTendril) {
-    ptr::read(t);
+    *t = ByteTendril::new();
 }
 
 #[no_mangle] pub unsafe extern "C"

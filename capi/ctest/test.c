@@ -18,6 +18,10 @@ int main() {
     tendril_debug_dump(&t, stdout);
     puts("");
 
+    tendril_sprintf(&t, "Appending\n");
+    tendril_fwrite(&s, stdout);
+    tendril_fwrite(&t, stdout);
+
     tendril_destroy(&s);
     tendril_destroy(&t);
     return 0;

@@ -2,3 +2,5 @@ Hello, 2015!
 Tendril<Bytes>(shared: [72, 101, 108, 108, 111, 44, 32, 50, 48, 49, 53, 33, 10])
 Tendril<Bytes>(inline: [72, 101, 108, 108, 111])
 Tendril<Bytes>(shared: [72, 101, 108, 108, 111, 44, 32, 50, 48, 49, 53, 33, 10])
+HelloHello, 2015!
+Appending
