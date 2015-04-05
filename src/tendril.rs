@@ -988,6 +988,7 @@ impl Tendril<fmt::UTF8> {
         encoding.encode_to(&*self, trap, &mut ret).map(|_| ret)
     }
 
+    /// Push a character onto the end.
     #[inline]
     pub fn push_char(&mut self, c: char) {
         unsafe {

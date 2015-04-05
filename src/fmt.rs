@@ -19,7 +19,7 @@
 //! the format sneaks in. For that reason, these traits require
 //! `unsafe impl`.
 
-use std::{char, str, mem, slice, iter};
+use std::{char, str, mem, slice};
 use std::default::Default;
 
 use futf::{self, Codepoint, Meaning};
@@ -31,6 +31,7 @@ use util::unsafe_slice;
 /// You don't need these unless you are implementing
 /// a new format.
 pub mod imp {
+    use std::{iter, slice, mem};
     use std::default::Default;
 
     /// Describes how to fix up encodings when concatenating.
@@ -52,6 +53,35 @@ pub mod imp {
                 drop_right: 0,
                 insert_len: 0,
                 insert_bytes: [0; 4],
+            }
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn from_u32_unchecked(n: u32) -> char {
+        mem::transmute(n)
+    }
+
+    pub struct SingleByteCharIndices<'a> {
+        inner: iter::Enumerate<slice::Iter<'a, u8>>,
+    }
+
+    impl<'a> Iterator for SingleByteCharIndices<'a> {
+        type Item = (usize, char);
+
+        #[inline]
+        fn next(&mut self) -> Option<(usize, char)> {
+            self.inner.next().map(|(i, &b)| unsafe {
+                (i, from_u32_unchecked(b as u32))
+            })
+        }
+    }
+
+    impl<'a> SingleByteCharIndices<'a> {
+        #[inline]
+        pub fn new(buf: &'a [u8]) -> SingleByteCharIndices<'a> {
+            SingleByteCharIndices {
+                inner: buf.iter().enumerate(),
             }
         }
     }
@@ -138,8 +168,7 @@ pub unsafe trait CharFormat<'a>: Format {
     /// Iterate over the characters of the string and their byte
     /// indices.
     ///
-    /// You may assume the buffer is *already validated* for `Format`
-    /// and the index is the start of a valid character.
+    /// You may assume the buffer is *already validated* for `Format`.
     unsafe fn char_indices(buf: &'a [u8]) -> Self::Iter;
 
     /// Encode the character as bytes and pass them to a continuation.
@@ -223,40 +252,12 @@ unsafe impl Format for ASCII {
 unsafe impl SubsetOf<UTF8> for ASCII { }
 unsafe impl SubsetOf<Latin1> for ASCII { }
 
-#[inline(always)]
-unsafe fn from_u32_unchecked(n: u32) -> char {
-    mem::transmute(n)
-}
-
-pub struct SingleByteCharIndices<'a> {
-    inner: iter::Enumerate<slice::Iter<'a, u8>>,
-}
-
-impl<'a> Iterator for SingleByteCharIndices<'a> {
-    type Item = (usize, char);
-
-    #[inline]
-    fn next(&mut self) -> Option<(usize, char)> {
-        self.inner.next().map(|(i, &b)| unsafe {
-            (i, from_u32_unchecked(b as u32))
-        })
-    }
-}
-
-impl<'a> SingleByteCharIndices<'a> {
-    pub fn new(buf: &'a [u8]) -> SingleByteCharIndices<'a> {
-        SingleByteCharIndices {
-            inner: buf.iter().enumerate(),
-        }
-    }
-}
-
 unsafe impl<'a> CharFormat<'a> for ASCII {
-    type Iter = SingleByteCharIndices<'a>;
+    type Iter = imp::SingleByteCharIndices<'a>;
 
     #[inline]
-    unsafe fn char_indices(buf: &'a [u8]) -> SingleByteCharIndices<'a> {
-        SingleByteCharIndices::new(buf)
+    unsafe fn char_indices(buf: &'a [u8]) -> imp::SingleByteCharIndices<'a> {
+        imp::SingleByteCharIndices::new(buf)
     }
 
     #[inline]
@@ -477,11 +478,11 @@ unsafe impl Format for Latin1 {
 }
 
 unsafe impl<'a> CharFormat<'a> for Latin1 {
-    type Iter = SingleByteCharIndices<'a>;
+    type Iter = imp::SingleByteCharIndices<'a>;
 
     #[inline]
-    unsafe fn char_indices(buf: &'a [u8]) -> SingleByteCharIndices<'a> {
-        SingleByteCharIndices::new(buf)
+    unsafe fn char_indices(buf: &'a [u8]) -> imp::SingleByteCharIndices<'a> {
+        imp::SingleByteCharIndices::new(buf)
     }
 
     #[inline]
