@@ -27,6 +27,19 @@ const MAX_INLINE_LEN: usize = 8;
 const MAX_INLINE_TAG: usize = 0xF;
 const EMPTY_TAG: usize = 0xF;
 
+#[inline(always)]
+fn inline_tag(len: u32) -> NonZero<usize> {
+    debug_assert!(len <= MAX_INLINE_LEN as u32);
+    unsafe {
+        NonZero::new(if len == 0 {
+            EMPTY_TAG
+        } else {
+            len as usize
+        })
+    }
+}
+
+#[repr(packed)]
 struct Header {
     refcount: Cell<usize>,
     cap: u32,
@@ -738,11 +751,9 @@ impl<F> Tendril<F>
 
     #[inline]
     unsafe fn inline(x: &[u8]) -> Tendril<F> {
-        debug_assert!(x.len() <= MAX_INLINE_LEN);
-
         let len = x.len();
         let mut t = Tendril {
-            ptr: Cell::new(NonZero::new(if len == 0 { EMPTY_TAG } else { len })),
+            ptr: Cell::new(inline_tag(len as u32)),
             len: mem::uninitialized(),
             aux: mem::uninitialized(),
             marker: PhantomData,
@@ -932,6 +943,24 @@ impl Tendril<fmt::Bytes> {
         let mut ret = Tendril::new();
         encoding.decode_to(&*self, trap, &mut ret).map(|_| ret)
     }
+
+    /// Push "uninitialized bytes" onto the end.
+    ///
+    /// Really, this grows the tendril without writing anything to the new area.
+    /// It's only defined for byte tendrils because it's only useful if you
+    /// plan to then mutate the buffer.
+    #[inline]
+    pub unsafe fn push_uninitialized(&mut self, n: u32) {
+        let new_len = self.len32().checked_add(n).expect(OFLOW);
+        if new_len <= MAX_INLINE_LEN as u32
+            && *self.ptr.get() <= MAX_INLINE_TAG
+        {
+            self.ptr.set(inline_tag(new_len))
+        } else {
+            self.make_owned_with_capacity(new_len);
+            self.len = new_len;
+        }
+    }
 }
 
 impl strfmt::Display for Tendril<fmt::UTF8> {
@@ -997,6 +1026,21 @@ impl Tendril<fmt::UTF8> {
             self.push_bytes_without_validating(unsafe_slice(&buf, 0, n));
         }
     }
+
+    /// Helper for the `format_tendril!` macro.
+    #[inline]
+    pub fn format(args: strfmt::Arguments) -> Tendril<fmt::UTF8> {
+        use std::fmt::Write;
+        let mut output: Tendril<fmt::UTF8> = Tendril::new();
+        let _ = write!(&mut output, "{}", args);
+        output
+    }
+}
+
+/// Create a `StrTendril` through string formatting.
+#[macro_export]
+macro_rules! format_tendril {
+    ($($arg:tt)*) => ($crate::Tendril::format(format_args!($($arg)*)))
 }
 
 #[cfg(test)]
@@ -1005,7 +1049,7 @@ mod bench;
 
 #[cfg(test)]
 mod test {
-    use super::{Tendril, ByteTendril, StrTendril, SliceExt};
+    use super::{Tendril, ByteTendril, StrTendril, SliceExt, Header};
     use fmt;
 
     #[test]
@@ -1029,6 +1073,9 @@ mod test {
         // Check that the NonZero<T> optimization is working.
         assert_eq!(correct, mem::size_of::<Option<ByteTendril>>());
         assert_eq!(correct, mem::size_of::<Option<StrTendril>>());
+
+        let correct_header = mem::size_of::<*const ()>() + 4;
+        assert_eq!(correct_header, mem::size_of::<Header>());
     }
 
     #[test]
@@ -1293,6 +1340,14 @@ mod test {
         assert!(t.try_reinterpret_view::<fmt::UTF8>().is_err());
         t[3] = 0x8b;
         assert_eq!("xyŋ", &**t.try_reinterpret_view::<fmt::UTF8>().unwrap());
+
+        unsafe {
+            t.push_uninitialized(3);
+            t[4] = 0xEA;
+            t[5] = 0x99;
+            t[6] = 0xAE;
+            assert_eq!("xyŋ\u{a66e}", &**t.try_reinterpret_view::<fmt::UTF8>().unwrap());
+        }
     }
 
     #[test]
@@ -1402,5 +1457,11 @@ mod test {
         assert!(t.try_push_char('\u{a66e}').is_err());
         assert!(t.try_push_char('\u{1f4a9}').is_err());
         assert_eq!(b"x\0\xa0", t.as_byte_slice());
+    }
+
+    #[test]
+    fn format() {
+        assert_eq!("", &*format_tendril!(""));
+        assert_eq!("two and two make 4", &*format_tendril!("two and two make {}", 2+2));
     }
 }
