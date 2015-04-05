@@ -2,4 +2,5 @@ language: rust
 script:
   - cargo test
   - cargo doc
+  - (cd capi/ctest; ./build-and-test.sh)
 after_success: curl https://raw.githubusercontent.com/kmcallister/travis-doc-upload/master/travis-doc-upload.sh | sh
