@@ -1,3 +1,9 @@
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 #ifndef _TENDRIL_H
 #define _TENDRIL_H
 
@@ -58,10 +64,6 @@ void tendril_clear(tendril *t);
 
 // Push some bytes onto the back of the tendril.
 void tendril_push_buffer(tendril *t, const char *buffer, uint32_t length);
-
-// Push a NULL-terminated string, *not including the terminator*, onto the back
-// of the tendril.
-void tendril_push_string(tendril *t, const char *str);
 
 // Push another tendril onto the back.
 void tendril_push_tendril(tendril *t, const tendril *r);

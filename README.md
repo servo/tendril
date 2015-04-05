@@ -57,7 +57,7 @@ int main() {
 }
 ```
 
-See the [API documentation](https://github.com/kmcallister/tendril/blob/master/capi/include/tendril.h)
+See the [API documentation](https://github.com/kmcallister/tendril/blob/master/capi/include/tendril.h#L18)
 and the [test program](https://github.com/kmcallister/tendril/blob/master/capi/ctest/test.c).
 
 ## Plans for the future
