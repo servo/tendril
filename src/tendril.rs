@@ -1038,6 +1038,8 @@ impl Tendril<fmt::UTF8> {
 }
 
 /// Create a `StrTendril` through string formatting.
+///
+/// Works just like the standard `format!` macro.
 #[macro_export]
 macro_rules! format_tendril {
     ($($arg:tt)*) => ($crate::Tendril::format(format_args!($($arg)*)))

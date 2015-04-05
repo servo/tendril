@@ -32,7 +32,7 @@ to go over the limit.
 ## Formats and encoding
 
 `Tendril` uses [phantom types](http://rustbyexample.com/generics/phantom.html)
-to track a buffer's encoding. This determines at compile time which
+to track a buffer's format. This determines at compile time which
 operations are available on a given tendril. For example, `Tendril<UTF8>` and
 `Tendril<Bytes>` can be borrowed as `&str` and `&[u8]` respectively.
 
@@ -42,8 +42,8 @@ preliminary support for [WTF-8][] buffers.
 
 ## C interface
 
-`Tendril` provides a C API, which allows Rust and C (or any other language) to
-efficiently exchange buffers.
+`Tendril` provides a C API, which allows Rust to efficiently exchange buffers
+with C or any other language.
 
 ```c
 #include "tendril.h"
