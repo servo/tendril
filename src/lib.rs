@@ -20,6 +20,7 @@ extern crate test;
 pub use tendril::{Tendril, ByteTendril, StrTendril, SliceExt, SubtendrilError};
 
 pub mod fmt;
+pub mod stream;
 
 mod util;
 mod buf32;
