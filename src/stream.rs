@@ -144,6 +144,7 @@ impl<Sink> TendrilSink<fmt::Bytes> for UTF8Validator<Sink>
         if self.need > 0 {
             debug_assert!(self.pfx.len() != 0);
             self.sink.error(Cow::Borrowed("incomplete byte sequence at end of stream"));
+            self.emit_char('\u{fffd}');
         }
         self.sink.finish();
     }
@@ -266,7 +267,6 @@ mod test {
         validator.finish();
 
         let Accumulate { tendrils, errors } = validator.into_sink();
-        println!("{:?} {:?}", tendrils, errors);
         assert_eq!(expected.len(), tendrils.len());
         for (&e, t) in expected.iter().zip(tendrils.iter()) {
             assert_eq!(e, &**t);
@@ -299,6 +299,10 @@ mod test {
             &["ő", "ő", "ő"], 0);
         check_validate(&[b"\xC5", b"\x91\xff", b"\x91\xC5", b"\x91"],
             &["ő", "\u{fffd}", "\u{fffd}", "ő"], 2);
+
+        // incomplete char at end of input
+        check_validate(&[b"\xC0"], &["\u{fffd}"], 1);
+        check_validate(&[b"\xEA\x99"], &["\u{fffd}"], 1);
     }
 
     fn check_decode(enc: EncodingRef, input: &[&[u8]], expected: &str, errs: usize) {
@@ -350,6 +354,10 @@ mod test {
             "xy\u{fffd}\u{fffd}\u{fffd}\u{fffd}z", 4);
         check_decode(enc::UTF_8, &[b"xy\xEA\x99", b"\xFFz"],
             "xy\u{fffd}\u{fffd}z", 2);
+
+        // incomplete char at end of input
+        check_decode(enc::UTF_8, &[b"\xC0"], "\u{fffd}", 1);
+        check_decode(enc::UTF_8, &[b"\xEA\x99"], "\u{fffd}", 1);
     }
 
     #[test]
@@ -369,6 +377,7 @@ mod test {
         check_decode(enc::WINDOWS_949, &[b"\xbe", b"", b"\xc8\xb3\xe7"], "안녕", 0);
         check_decode(enc::WINDOWS_949, &[b"\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\xbf\xe4"],
             "안녕하세요", 0);
+        check_decode(enc::WINDOWS_949, &[b"\xbe\xc8\xb3\xe7\xc7"], "안녕\u{fffd}", 1);
 
         check_decode(enc::WINDOWS_949, &[b"\xbe", b"", b"\xc8\xb3"], "안\u{fffd}", 1);
         check_decode(enc::WINDOWS_949, &[b"\xbe\x28\xb3\xe7"], "\u{fffd}(녕", 1);
