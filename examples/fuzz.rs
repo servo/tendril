@@ -133,8 +133,5 @@ static TEXT: &'static str =
      ǝɥʇ ʇɐɥʇ sʇǝod puɐ sʇsıʇɹɐ ǝɥʇ ɯoɹɟ sɐʍ ʇI";
 
 fn main() {
-    loop {
-        fuzz();
-        println!(".");
-    }
+    fuzz();
 }
