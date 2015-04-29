@@ -72,10 +72,17 @@ fn fuzz() {
                 assert_eq!(&*buf_string, &*buf_tendril);
             }
 
-            80...96 => {
+            80...90 => {
                 let (start, end) = random_slice(&mut rng, &buf_string);
                 buf_string = buf_string[start..end].to_owned();
                 buf_tendril = buf_tendril.subtendril(start as u32, (end - start) as u32);
+                assert_eq!(&*buf_string, &*buf_tendril);
+            }
+
+            91...96 => {
+                let c = rng.gen();
+                buf_string.push(c);
+                assert!(buf_tendril.try_push_char(c).is_ok());
                 assert_eq!(&*buf_string, &*buf_tendril);
             }
 

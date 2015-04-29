@@ -1212,10 +1212,18 @@ mod test {
 
         assert!(b"\xFF".to_tendril().try_reinterpret::<fmt::ASCII>().is_err());
 
+        let t = "hello".to_tendril();
+        let ascii: &Tendril<fmt::ASCII> = t.try_as_subset().unwrap();
+        assert_eq!(b"hello", &**ascii.as_bytes());
+
+        assert!("ő".to_tendril().try_reinterpret_view::<fmt::ASCII>().is_err());
+        assert!("ő".to_tendril().try_as_subset::<fmt::ASCII>().is_err());
+
         let ascii: Tendril<fmt::ASCII> = "hello".to_tendril().try_into_subset().unwrap();
         assert_eq!(b"hello", &**ascii.as_bytes());
 
         assert!("ő".to_tendril().try_reinterpret::<fmt::ASCII>().is_err());
+        assert!("ő".to_tendril().try_into_subset::<fmt::ASCII>().is_err());
     }
 
     #[test]
@@ -1349,6 +1357,9 @@ mod test {
             t[5] = 0x99;
             t[6] = 0xAE;
             assert_eq!("xyŋ\u{a66e}", &**t.try_reinterpret_view::<fmt::UTF8>().unwrap());
+            t.push_uninitialized(20);
+            t.pop_back(20);
+            assert_eq!("xyŋ\u{a66e}", &**t.try_reinterpret_view::<fmt::UTF8>().unwrap());
         }
     }
 
@@ -1465,5 +1476,113 @@ mod test {
     fn format() {
         assert_eq!("", &*format_tendril!(""));
         assert_eq!("two and two make 4", &*format_tendril!("two and two make {}", 2+2));
+    }
+
+    #[test]
+    fn merge_shared() {
+        let t = "012345678901234567890123456789".to_tendril();
+        let a = t.subtendril(10, 20);
+        assert!(a.is_shared());
+        assert_eq!("01234567890123456789", &*a);
+        let mut b = t.subtendril(0, 10);
+        assert!(b.is_shared());
+        assert_eq!("0123456789", &*b);
+
+        b.push_tendril(&a);
+        assert!(b.is_shared());
+        assert!(a.is_shared());
+        assert!(a.is_shared_with(&b));
+        assert!(b.is_shared_with(&a));
+        assert_eq!("012345678901234567890123456789", &*b);
+
+        assert!(t.is_shared());
+        assert!(t.is_shared_with(&a));
+        assert!(t.is_shared_with(&b));
+    }
+
+    #[test]
+    fn merge_cant_share() {
+        let t = "012345678901234567890123456789".to_tendril();
+        let mut b = t.subtendril(0, 10);
+        assert!(b.is_shared());
+        assert_eq!("0123456789", &*b);
+
+        b.push_tendril(&"abcd".to_tendril());
+        assert!(!b.is_shared());
+        assert_eq!("0123456789abcd", &*b);
+    }
+
+    #[test]
+    fn shared_doesnt_reserve() {
+        let mut t = "012345678901234567890123456789".to_tendril();
+        let a = t.subtendril(1, 10);
+
+        assert!(t.is_shared());
+        t.reserve(10);
+        assert!(t.is_shared());
+
+        let _ = a;
+    }
+
+    #[test]
+    fn out_of_bounds() {
+        assert!("".to_tendril().try_subtendril(0, 1).is_err());
+        assert!("abc".to_tendril().try_subtendril(0, 4).is_err());
+        assert!("abc".to_tendril().try_subtendril(3, 1).is_err());
+        assert!("abc".to_tendril().try_subtendril(7, 1).is_err());
+
+        let mut t = "".to_tendril();
+        assert!(t.try_pop_front(1).is_err());
+        assert!(t.try_pop_front(5).is_err());
+        assert!(t.try_pop_front(500).is_err());
+        assert!(t.try_pop_back(1).is_err());
+        assert!(t.try_pop_back(5).is_err());
+        assert!(t.try_pop_back(500).is_err());
+
+
+        let mut t = "abcd".to_tendril();
+        assert!(t.try_pop_front(1).is_ok());
+        assert!(t.try_pop_front(4).is_err());
+        assert!(t.try_pop_front(500).is_err());
+        assert!(t.try_pop_back(1).is_ok());
+        assert!(t.try_pop_back(3).is_err());
+        assert!(t.try_pop_back(500).is_err());
+    }
+
+    #[test]
+    fn compare() {
+        for &a in &["indiscretions", "validity", "hallucinogenics", "timelessness",
+                    "original", "microcosms", "boilers", "mammoth"] {
+            for &b in &["intrepidly", "frigid", "spa", "cardigans",
+                        "guileful", "evaporated", "unenthusiastic", "legitimate"] {
+                let ta = a.to_tendril();
+                let tb = b.to_tendril();
+
+                assert_eq!(a.eq(b), ta.eq(&tb));
+                assert_eq!(a.ne(b), ta.ne(&tb));
+                assert_eq!(a.lt(b), ta.lt(&tb));
+                assert_eq!(a.le(b), ta.le(&tb));
+                assert_eq!(a.gt(b), ta.gt(&tb));
+                assert_eq!(a.ge(b), ta.ge(&tb));
+                assert_eq!(a.partial_cmp(b), ta.partial_cmp(&tb));
+                assert_eq!(a.cmp(b), ta.cmp(&tb));
+            }
+        }
+    }
+
+    #[test]
+    fn extend() {
+        let mut t = "Hello".to_tendril();
+        t.extend(None.into_iter());
+        assert_eq!("Hello", &*t);
+        t.extend(&[", ".to_tendril(), "world".to_tendril(), "!".to_tendril()]);
+        assert_eq!("Hello, world!", &*t);
+    }
+
+    #[test]
+    fn from_str() {
+        use std::str::FromStr;
+        let t: Tendril<_> = FromStr::from_str("foo bar baz").unwrap();
+        assert_eq!("foo bar baz", &*t);
     }
 }
