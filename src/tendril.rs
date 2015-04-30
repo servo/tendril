@@ -1027,6 +1027,14 @@ impl Tendril<fmt::UTF8> {
         }
     }
 
+    /// Create a `Tendril` from a single character.
+    #[inline]
+    pub fn from_char(c: char) -> Tendril<fmt::UTF8> {
+        let mut t: Tendril<fmt::UTF8> = Tendril::new();
+        t.push_char(c);
+        t
+    }
+
     /// Helper for the `format_tendril!` macro.
     #[inline]
     pub fn format(args: strfmt::Arguments) -> Tendril<fmt::UTF8> {
@@ -1584,5 +1592,13 @@ mod test {
         use std::str::FromStr;
         let t: Tendril<_> = FromStr::from_str("foo bar baz").unwrap();
         assert_eq!("foo bar baz", &*t);
+    }
+
+    #[test]
+    fn from_char() {
+        assert_eq!("o", &*StrTendril::from_char('o'));
+        assert_eq!("ő", &*StrTendril::from_char('ő'));
+        assert_eq!("\u{a66e}", &*StrTendril::from_char('\u{a66e}'));
+        assert_eq!("\u{1f4a9}", &*StrTendril::from_char('\u{1f4a9}'));
     }
 }
