@@ -506,6 +506,9 @@ impl<F> Tendril<F>
     /// validation.
     #[inline]
     pub fn try_pop_front(&mut self, n: u32) -> Result<(), SubtendrilError> {
+        if n == 0 {
+            return Ok(());
+        }
         let old_len = self.len32();
         if n > old_len {
             return Err(SubtendrilError::OutOfBounds);
@@ -538,6 +541,9 @@ impl<F> Tendril<F>
     /// validation.
     #[inline]
     pub fn try_pop_back(&mut self, n: u32) -> Result<(), SubtendrilError> {
+        if n == 0 {
+            return Ok(());
+        }
         let old_len = self.len32();
         if n > old_len {
             return Err(SubtendrilError::OutOfBounds);
@@ -895,6 +901,53 @@ impl DerefMut for Tendril<fmt::Bytes> {
     }
 }
 
+/// Extension trait for `io::Read`.
+pub trait ReadExt: io::Read {
+    fn read_to_tendril(&mut self, buf: &mut Tendril<fmt::Bytes>) -> io::Result<usize>;
+}
+
+impl<T> ReadExt for T
+    where T: io::Read
+{
+    /// Read all bytes until EOF.
+    fn read_to_tendril(&mut self, buf: &mut Tendril<fmt::Bytes>) -> io::Result<usize> {
+        // Adapted from libstd/io/mod.rs.
+        const DEFAULT_BUF_SIZE: u32 = 64 * 1024;
+
+        let start_len = buf.len();
+        let mut len = start_len;
+        let mut new_write_size = 16;
+        let ret;
+        loop {
+            if len == buf.len() {
+                if new_write_size < DEFAULT_BUF_SIZE {
+                    new_write_size *= 2;
+                }
+                unsafe {
+                    buf.push_uninitialized(new_write_size);
+                }
+            }
+
+            match self.read(&mut buf[len..]) {
+                Ok(0) => {
+                    ret = Ok(len - start_len);
+                    break;
+                }
+                Ok(n) => len += n,
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => {
+                    ret = Err(e);
+                    break;
+                }
+            }
+        }
+
+        let buf_len = buf.len32();
+        buf.pop_back(buf_len - (len as u32));
+        ret
+    }
+}
+
 impl io::Write for Tendril<fmt::Bytes> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -1059,8 +1112,9 @@ mod bench;
 
 #[cfg(test)]
 mod test {
-    use super::{Tendril, ByteTendril, StrTendril, SliceExt, Header};
+    use super::{Tendril, ByteTendril, StrTendril, ReadExt, SliceExt, Header};
     use fmt;
+    use std::iter;
 
     #[test]
     fn smoke_test() {
@@ -1600,5 +1654,21 @@ mod test {
         assert_eq!("ő", &*StrTendril::from_char('ő'));
         assert_eq!("\u{a66e}", &*StrTendril::from_char('\u{a66e}'));
         assert_eq!("\u{1f4a9}", &*StrTendril::from_char('\u{1f4a9}'));
+    }
+
+    #[test]
+    fn read() {
+        fn check(x: &[u8]) {
+            use std::io::Cursor;
+            let mut t = Tendril::new();
+            assert_eq!(x.len(), Cursor::new(x).read_to_tendril(&mut t).unwrap());
+            assert_eq!(x, &*t);
+        }
+
+        check(b"");
+        check(b"abcd");
+
+        let long: Vec<u8> = iter::repeat(b'x').take(1_000_000).collect();
+        check(&long);
     }
 }

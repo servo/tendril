@@ -17,7 +17,7 @@ extern crate encoding;
 #[cfg(test)]
 extern crate test;
 
-pub use tendril::{Tendril, ByteTendril, StrTendril, SliceExt, SubtendrilError};
+pub use tendril::{Tendril, ByteTendril, StrTendril, SliceExt, ReadExt, SubtendrilError};
 
 pub mod fmt;
 pub mod stream;
