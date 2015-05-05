@@ -6,7 +6,7 @@
 
 //! A simple fuzz tester for the library.
 
-#![feature(unsafe_no_drop_flag, unsafe_destructor, str_char)]
+#![feature(unsafe_no_drop_flag, str_char)]
 #![deny(warnings)]
 
 extern crate rand;

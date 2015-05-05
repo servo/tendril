@@ -119,7 +119,6 @@ impl<F> Clone for Tendril<F>
     }
 }
 
-#[unsafe_destructor]
 impl<F> Drop for Tendril<F>
     where F: fmt::Format,
 {
