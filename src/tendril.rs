@@ -4,7 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::{raw, ptr, mem, intrinsics, hash, str, u32, io, slice, cmp};
+use std::{ptr, mem, intrinsics, hash, str, u32, io, slice, cmp};
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::cell::Cell;
@@ -779,14 +779,10 @@ impl<F> Tendril<F>
     fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
         unsafe {
             match *self.ptr.get() {
-                EMPTY_TAG => mem::transmute(raw::Slice {
-                    data: ptr::null::<u8>(),
-                    len: 0,
-                }),
-                n if n <= MAX_INLINE_LEN => mem::transmute(raw::Slice {
-                    data: &self.len as *const u32 as *const u8,
-                    len: n,
-                }),
+                EMPTY_TAG => &[],
+                n if n <= MAX_INLINE_LEN => {
+                    slice::from_raw_parts(&self.len as *const u32 as *const u8, n)
+                }
                 _ => {
                     let (buf, _, offset) = self.assume_buf();
                     mem::copy_lifetime(self, unsafe_slice(buf.data(),
@@ -802,14 +798,10 @@ impl DerefMut for Tendril<fmt::Bytes> {
     fn deref_mut<'a>(&'a mut self) -> &'a mut [u8] {
         unsafe {
             match *self.ptr.get() {
-                EMPTY_TAG => mem::transmute(raw::Slice {
-                    data: ptr::null::<u8>(),
-                    len: 0,
-                }),
-                n if n <= MAX_INLINE_LEN => mem::transmute(raw::Slice {
-                    data: &self.len as *const u32 as *const u8,
-                    len: n,
-                }),
+                EMPTY_TAG => &mut [],
+                n if n <= MAX_INLINE_LEN => {
+                    slice::from_raw_parts_mut(&mut self.len as *mut u32 as *mut u8, n)
+                }
                 _ => {
                     let (mut buf, _, offset) = self.assume_buf();
                     let len = self.len32() as usize;

@@ -4,14 +4,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(core, libc)]
 #![warn(warnings)]
 
 extern crate libc;
 extern crate tendril;
 
 use tendril::{ByteTendril, StrTendril};
-use std::{mem, raw};
+use std::slice;
 
 // Link the C glue code
 #[link_name="tendril_cglue"]
@@ -42,11 +41,7 @@ fn tendril_clear(t: *mut ByteTendril) {
 
 #[no_mangle] pub unsafe extern "C"
 fn tendril_push_buffer(t: *mut ByteTendril, buffer: *const u8, length: u32) {
-    let s = raw::Slice {
-        data: buffer,
-        len: length as usize,
-    };
-    (*t).push_slice(mem::transmute(s));
+    (*t).push_slice(slice::from_raw_parts(buffer, length as usize));
 }
 
 #[no_mangle] pub unsafe extern "C"
