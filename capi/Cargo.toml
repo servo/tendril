@@ -11,6 +11,9 @@ build = "build.rs"
 name = "tendril_capi"
 crate-type = ["staticlib"]
 
+[dependencies]
+libc = "0.1"
+
 [dependencies.tendril]
 path = "../"
 

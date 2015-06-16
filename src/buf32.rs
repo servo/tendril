@@ -6,7 +6,7 @@
 
 //! Provides an unsafe owned buffer type, used in implementing `Tendril`.
 
-use std::{raw, mem, ptr, cmp, u32};
+use std::{mem, ptr, cmp, u32, slice};
 use std::rt::heap;
 
 use OFLOW;
@@ -76,16 +76,13 @@ impl<H> Buf32<H> {
     }
 
     #[inline(always)]
-    pub unsafe fn data_raw(&self) -> raw::Slice<u8> {
-        raw::Slice {
-            data: self.data_ptr(),
-            len: self.len as usize,
-        }
+    pub unsafe fn data(&self) -> &[u8] {
+        slice::from_raw_parts(self.data_ptr(), self.len as usize)
     }
 
     #[inline(always)]
-    pub unsafe fn data(&self) -> &[u8] {
-        mem::transmute(self.data_raw())
+    pub unsafe fn data_mut(&mut self) -> &mut [u8] {
+        slice::from_raw_parts_mut(self.data_ptr(), self.len as usize)
     }
 
     /// Grow the capacity to at least `new_cap`.
@@ -124,8 +121,7 @@ mod test {
             assert_eq!(b"", b.data());
 
             b.grow(5);
-            intrinsics::copy_nonoverlapping(b"Hello".as_ptr(),
-                b.data_raw().data as *mut u8, 5);
+            intrinsics::copy_nonoverlapping(b"Hello".as_ptr(), b.data_ptr(), 5);
 
             assert_eq!(b"", b.data());
             b.len = 5;
