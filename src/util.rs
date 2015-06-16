@@ -5,6 +5,7 @@
 // except according to those terms.
 
 use std::{slice, intrinsics};
+use std::mem;
 use std::raw::{self, Repr};
 
 #[inline(always)]
@@ -16,7 +17,22 @@ pub unsafe fn unsafe_slice<'a>(buf: &'a [u8], start: usize, new_len: usize) -> &
 }
 
 #[inline(always)]
+pub unsafe fn unsafe_slice_mut<'a>(buf: &'a mut [u8], start: usize, new_len: usize) -> &'a mut [u8] {
+    let raw::Slice { data, len } = buf.repr();
+    debug_assert!(start <= len);
+    debug_assert!(new_len <= (len - start));
+    slice::from_raw_parts_mut((data as *mut u8).offset(start as isize), new_len)
+}
+
+#[inline(always)]
 pub unsafe fn copy_and_advance(dest: &mut *mut u8, src: &[u8]) {
     intrinsics::copy_nonoverlapping(src.as_ptr(), *dest, src.len());
     *dest = dest.offset(src.len() as isize)
 }
+
+#[inline(always)]
+pub unsafe fn copy_lifetime_mut<'a, S: ?Sized, T: ?Sized + 'a>
+                           (_ptr: &'a mut S, ptr: &mut T) -> &'a mut T {
+    mem::transmute(ptr)
+}
+

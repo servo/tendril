@@ -20,7 +20,7 @@ use encoding::{self, EncodingRef, DecoderTrap, EncoderTrap};
 use buf32::{self, Buf32};
 use fmt::{self, Slice};
 use fmt::imp::Fixup;
-use util::{unsafe_slice, copy_and_advance};
+use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut};
 use OFLOW;
 
 const MAX_INLINE_LEN: usize = 8;
@@ -681,27 +681,6 @@ impl<F> Tendril<F>
     }
 
     #[inline]
-    fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
-        unsafe {
-            match *self.ptr.get() {
-                EMPTY_TAG => mem::transmute(raw::Slice {
-                    data: ptr::null::<u8>(),
-                    len: 0,
-                }),
-                n if n <= MAX_INLINE_LEN => mem::transmute(raw::Slice {
-                    data: &self.len as *const u32 as *const u8,
-                    len: n,
-                }),
-                _ => {
-                    let (buf, _, offset) = self.assume_buf();
-                    mem::copy_lifetime(self, unsafe_slice(buf.data(),
-                        offset as usize, self.len32() as usize))
-                }
-            }
-        }
-    }
-
-    #[inline]
     unsafe fn incref(&self) {
         let header = self.header();
         let refcount = (*header).refcount.get().checked_add(1).expect(OFLOW);
@@ -795,7 +774,52 @@ impl<F> Tendril<F>
             marker: PhantomData,
         }
     }
+
+    #[inline]
+    fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
+        unsafe {
+            match *self.ptr.get() {
+                EMPTY_TAG => mem::transmute(raw::Slice {
+                    data: ptr::null::<u8>(),
+                    len: 0,
+                }),
+                n if n <= MAX_INLINE_LEN => mem::transmute(raw::Slice {
+                    data: &self.len as *const u32 as *const u8,
+                    len: n,
+                }),
+                _ => {
+                    let (buf, _, offset) = self.assume_buf();
+                    mem::copy_lifetime(self, unsafe_slice(buf.data(),
+                        offset as usize, self.len32() as usize))
+                }
+            }
+        }
+    }
 }
+
+impl DerefMut for Tendril<fmt::Bytes> {
+    #[inline]
+    fn deref_mut<'a>(&'a mut self) -> &'a mut [u8] {
+        unsafe {
+            match *self.ptr.get() {
+                EMPTY_TAG => mem::transmute(raw::Slice {
+                    data: ptr::null::<u8>(),
+                    len: 0,
+                }),
+                n if n <= MAX_INLINE_LEN => mem::transmute(raw::Slice {
+                    data: &self.len as *const u32 as *const u8,
+                    len: n,
+                }),
+                _ => {
+                    let (mut buf, _, offset) = self.assume_buf();
+                    let len = self.len32() as usize;
+                    copy_lifetime_mut(self, unsafe_slice_mut(buf.data_mut(), offset as usize, len))
+                }
+            }
+        }
+    }
+}
+
 
 impl<F> Tendril<F>
     where F: fmt::SliceFormat,
@@ -888,15 +912,6 @@ impl<F> Tendril<F>
         F::encode_char(c, |b| unsafe {
             self.push_bytes_without_validating(b);
         })
-    }
-}
-
-impl DerefMut for Tendril<fmt::Bytes> {
-    #[inline]
-    fn deref_mut<'a>(&'a mut self) -> &'a mut [u8] {
-        unsafe {
-            mem::transmute(self.as_byte_slice())
-        }
     }
 }
 

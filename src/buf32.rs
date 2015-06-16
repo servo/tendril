@@ -88,6 +88,11 @@ impl<H> Buf32<H> {
         mem::transmute(self.data_raw())
     }
 
+    #[inline(always)]
+    pub unsafe fn data_mut(&mut self) -> &mut [u8] {
+        mem::transmute(self.data_raw())
+    }
+
     /// Grow the capacity to at least `new_cap`.
     ///
     /// This will panic if the capacity calculation overflows `u32`.
