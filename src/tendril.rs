@@ -20,7 +20,7 @@ use encoding::{self, EncodingRef, DecoderTrap, EncoderTrap};
 use buf32::{self, Buf32};
 use fmt::{self, Slice};
 use fmt::imp::Fixup;
-use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut};
+use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut, copy_lifetime};
 use OFLOW;
 
 const MAX_INLINE_LEN: usize = 8;
@@ -785,7 +785,7 @@ impl<F> Tendril<F>
                 }
                 _ => {
                     let (buf, _, offset) = self.assume_buf();
-                    mem::copy_lifetime(self, unsafe_slice(buf.data(),
+                    copy_lifetime(self, unsafe_slice(buf.data(),
                         offset as usize, self.len32() as usize))
                 }
             }

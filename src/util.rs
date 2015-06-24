@@ -33,3 +33,10 @@ pub unsafe fn copy_lifetime_mut<'a, S: ?Sized, T: ?Sized + 'a>
     mem::transmute(ptr)
 }
 
+
+#[inline(always)]
+pub unsafe fn copy_lifetime<'a, S: ?Sized, T: ?Sized + 'a>
+                           (_ptr: &'a S, ptr: &T) -> &'a T {
+    mem::transmute(ptr)
+}
+

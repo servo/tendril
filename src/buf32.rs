@@ -112,7 +112,7 @@ impl<H> Buf32<H> {
 #[cfg(test)]
 mod test {
     use super::Buf32;
-    use std::intrinsics;
+    use std::ptr;
 
     #[test]
     fn smoke_test() {
@@ -121,7 +121,7 @@ mod test {
             assert_eq!(b"", b.data());
 
             b.grow(5);
-            intrinsics::copy_nonoverlapping(b"Hello".as_ptr(), b.data_ptr(), 5);
+            ptr::copy_nonoverlapping(b"Hello".as_ptr(), b.data_ptr(), 5);
 
             assert_eq!(b"", b.data());
             b.len = 5;
