@@ -1112,6 +1112,43 @@ macro_rules! format_tendril {
     ($($arg:tt)*) => ($crate::Tendril::format(format_args!($($arg)*)))
 }
 
+
+impl<'a, F> From<&'a F::Slice> for Tendril<F> where F: fmt::SliceFormat {
+    #[inline]
+    fn from(input: &F::Slice) -> Tendril<F> {
+        Tendril::from_slice(input)
+    }
+}
+
+impl From<String> for Tendril<fmt::UTF8> {
+    #[inline]
+    fn from(input: String) -> Tendril<fmt::UTF8> {
+        Tendril::from_slice(&*input)
+    }
+}
+
+impl<F> AsRef<F::Slice> for Tendril<F> where F: fmt::SliceFormat {
+    #[inline]
+    fn as_ref(&self) -> &F::Slice {
+        &**self
+    }
+}
+
+impl From<Tendril<fmt::UTF8>> for String {
+    #[inline]
+    fn from(input: Tendril<fmt::UTF8>) -> String {
+        String::from(&*input)
+    }
+}
+
+impl<'a> From<&'a Tendril<fmt::UTF8>> for String {
+    #[inline]
+    fn from(input: &'a Tendril<fmt::UTF8>) -> String {
+        String::from(&**input)
+    }
+}
+
+
 #[cfg(test)]
 #[path="bench.rs"]
 mod bench;
