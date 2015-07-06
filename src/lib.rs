@@ -18,6 +18,7 @@ extern crate encoding;
 extern crate test;
 
 pub use tendril::{Tendril, ByteTendril, StrTendril, SliceExt, ReadExt, SubtendrilError};
+pub use fmt::Format;
 
 pub mod fmt;
 pub mod stream;
