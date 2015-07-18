@@ -5,7 +5,7 @@
 // except according to those terms.
 
 use std::{ptr, mem, intrinsics, hash, str, u32, io, slice, cmp};
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::marker::PhantomData;
 use std::cell::Cell;
 use std::ops::{Deref, DerefMut};
@@ -161,6 +161,18 @@ impl<F> Deref for Tendril<F>
         }
     }
 }
+
+impl<F> Borrow<[u8]> for Tendril<F>
+    where F: fmt::SliceFormat,
+{
+    fn borrow(&self) -> &[u8] {
+        self.as_byte_slice()
+    }
+}
+
+// Why not impl Borrow<str> for Tendril<fmt::UTF8>? str and [u8] hash differently,
+// and so a HashMap<StrTendril, _> would silently break if we indexed by str. Ick.
+// https://github.com/rust-lang/rust/issues/27108
 
 impl<'a, F> Extend<&'a Tendril<F>> for Tendril<F>
     where F: fmt::Format + 'a,
