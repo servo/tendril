@@ -1726,4 +1726,21 @@ mod test {
         let long: Vec<u8> = iter::repeat(b'x').take(1_000_000).collect();
         check(&long);
     }
+
+    #[test]
+    fn hash_map_key() {
+        use std::collections::HashMap;
+
+        // As noted with Borrow, indexing on HashMap<StrTendril, _> is byte-based because of
+        // https://github.com/rust-lang/rust/issues/27108.
+        let mut map = HashMap::new();
+        map.insert("foo".to_tendril(), 1);
+        assert_eq!(map.get(b"foo" as &[u8]), Some(&1));
+        assert_eq!(map.get(b"bar" as &[u8]), None);
+
+        let mut map = HashMap::new();
+        map.insert(b"foo".to_tendril(), 1);
+        assert_eq!(map.get(b"foo" as &[u8]), Some(&1));
+        assert_eq!(map.get(b"bar" as &[u8]), None);
+    }
 }
