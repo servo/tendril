@@ -15,13 +15,13 @@ use std::default::Default;
 use std::cmp::Ordering;
 use std::fmt as strfmt;
 
-use core::nonzero::NonZero;
 use encoding::{self, EncodingRef, DecoderTrap, EncoderTrap};
 
 use buf32::{self, Buf32};
 use fmt::{self, Slice};
 use fmt::imp::Fixup;
-use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut, copy_lifetime};
+use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut, copy_lifetime,
+           NonZero, is_post_drop};
 use OFLOW;
 
 const MAX_INLINE_LEN: usize = 8;
@@ -87,7 +87,7 @@ pub enum SubtendrilError {
 ///
 /// The maximum length of a `Tendril` is 4 GB. The library will panic if
 /// you attempt to go over the limit.
-#[unsafe_no_drop_flag]
+#[cfg_attr(feature = "unstable", unsafe_no_drop_flag)]
 #[repr(packed)]
 pub struct Tendril<F>
     where F: fmt::Format,
@@ -127,7 +127,7 @@ impl<F> Drop for Tendril<F>
     fn drop(&mut self) {
         unsafe {
             let p = *self.ptr.get();
-            if p <= MAX_INLINE_TAG || p == mem::POST_DROP_USIZE {
+            if p <= MAX_INLINE_TAG || is_post_drop(p) {
                 return;
             }
 
@@ -1179,11 +1179,15 @@ mod test {
     #[test]
     fn assert_sizes() {
         use std::mem;
-        let correct = mem::size_of::<*const ()>() + 8;
+        let drop_flag = if cfg!(feature = "unstable") { 0 } else { 1 };
+        let correct = mem::size_of::<*const ()>() + 8 + drop_flag;
+
         assert_eq!(correct, mem::size_of::<ByteTendril>());
         assert_eq!(correct, mem::size_of::<StrTendril>());
 
-        // Check that the NonZero<T> optimization is working.
+        // Check that the NonZero<T> optimization is working, if on unstable Rust.
+        let option_tag = if cfg!(feature = "unstable") { 0 } else { 1 };
+        let correct = correct + option_tag;
         assert_eq!(correct, mem::size_of::<Option<ByteTendril>>());
         assert_eq!(correct, mem::size_of::<Option<StrTendril>>());
 
