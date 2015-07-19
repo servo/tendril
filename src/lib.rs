@@ -6,7 +6,7 @@
 
 #![feature(core, unsafe_no_drop_flag, filling_drop, nonzero)]
 #![cfg_attr(test, feature(test, str_char))]
-#![deny(warnings)]
+#![cfg_attr(test, deny(warnings))]
 
 extern crate core;
 #[macro_use] extern crate mac;
