@@ -6,15 +6,11 @@
 
 //! Provides an unsafe owned buffer type, used in implementing `Tendril`.
 
-use std::{mem, ptr, cmp, u32, slice};
-use std::rt::heap;
+use std::{mem, ptr, u32, slice};
 
 use OFLOW;
 
 pub const MIN_CAP: u32 = 16;
-
-// NB: This alignment must be sufficient for H!
-pub const MIN_ALIGN: usize = 4;
 
 pub const MAX_LEN: usize = u32::MAX as usize;
 
@@ -28,17 +24,12 @@ pub struct Buf32<H> {
 }
 
 #[inline(always)]
-fn add_header<H>(x: u32) -> usize {
-    (x as usize).checked_add(mem::size_of::<H>())
-        .expect(OFLOW)
-}
-
-#[inline(always)]
-fn full_cap<H>(size: usize) -> u32 {
-    cmp::min(u32::MAX as usize,
-        heap::usable_size(size, MIN_ALIGN)
-            .checked_sub(mem::size_of::<H>())
-            .expect(OFLOW)) as u32
+fn bytes_to_vec_capacity<H>(x: u32) -> usize {
+    let header = mem::size_of::<H>();
+    debug_assert!(header > 0);
+    let x = (x as usize).checked_add(header).expect(OFLOW);
+    // Integer ceil http://stackoverflow.com/a/2745086/1162888
+    1 + ((x - 1) / header)
 }
 
 impl<H> Buf32<H> {
@@ -48,26 +39,21 @@ impl<H> Buf32<H> {
             cap = MIN_CAP;
         }
 
-        let alloc_size = add_header::<H>(cap);
-        let ptr = heap::allocate(alloc_size, MIN_ALIGN);
-        if ptr.is_null() {
-            ::alloc::oom();
-        }
-
-        let ptr = ptr as *mut H;
+        let mut vec = Vec::<H>::with_capacity(bytes_to_vec_capacity::<H>(cap));
+        let ptr = vec.as_mut_ptr();
+        mem::forget(vec);
         ptr::write(ptr, h);
 
         Buf32 {
             ptr: ptr,
             len: 0,
-            cap: full_cap::<H>(alloc_size),
+            cap: cap,
         }
     }
 
     #[inline]
     pub unsafe fn destroy(self) {
-        let alloc_size = add_header::<H>(self.cap);
-        heap::deallocate(self.ptr as *mut u8, alloc_size, MIN_ALIGN);
+        mem::drop(Vec::from_raw_parts(self.ptr, 1, bytes_to_vec_capacity::<H>(self.cap)));
     }
 
     #[inline(always)]
@@ -95,17 +81,11 @@ impl<H> Buf32<H> {
         }
 
         let new_cap = new_cap.checked_next_power_of_two().expect(OFLOW);
-        let alloc_size = add_header::<H>(new_cap);
-        let ptr = heap::reallocate(self.ptr as *mut u8,
-                                   add_header::<H>(new_cap),
-                                   alloc_size,
-                                   MIN_ALIGN);
-        if ptr.is_null() {
-            ::alloc::oom();
-        }
-
-        self.ptr = ptr as *mut H;
-        self.cap = full_cap::<H>(alloc_size);
+        let mut vec = Vec::from_raw_parts(self.ptr, 0, bytes_to_vec_capacity::<H>(self.cap));
+        vec.reserve_exact(bytes_to_vec_capacity::<H>(new_cap));
+        self.ptr = vec.as_mut_ptr();
+        self.cap = new_cap;
+        mem::forget(vec);
     }
 }
 
@@ -117,7 +97,7 @@ mod test {
     #[test]
     fn smoke_test() {
         unsafe {
-            let mut b = Buf32::with_capacity(0, ());
+            let mut b = Buf32::with_capacity(0, 0u8);
             assert_eq!(b"", b.data());
 
             b.grow(5);

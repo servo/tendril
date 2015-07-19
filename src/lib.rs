@@ -4,11 +4,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(alloc, core, unsafe_no_drop_flag, filling_drop, nonzero, heap_api, oom)]
+#![feature(core, unsafe_no_drop_flag, filling_drop, nonzero)]
 #![cfg_attr(test, feature(test, str_char))]
 #![deny(warnings)]
 
-extern crate alloc;
 extern crate core;
 #[macro_use] extern crate mac;
 extern crate futf;
