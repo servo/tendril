@@ -4,7 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(alloc, core, unsafe_no_drop_flag, filling_drop, unicode, ref_slice, nonzero, heap_api, oom)]
+#![feature(alloc, core, unsafe_no_drop_flag, filling_drop, nonzero, heap_api, oom)]
 #![cfg_attr(test, feature(test, str_char))]
 #![deny(warnings)]
 

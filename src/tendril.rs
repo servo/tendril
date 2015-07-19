@@ -10,6 +10,7 @@ use std::marker::PhantomData;
 use std::cell::Cell;
 use std::ops::{Deref, DerefMut};
 use std::iter::IntoIterator;
+use std::io::Write;
 use std::default::Default;
 use std::cmp::Ordering;
 use std::fmt as strfmt;
@@ -976,7 +977,7 @@ impl io::Write for Tendril<fmt::Bytes> {
 impl encoding::ByteWriter for Tendril<fmt::Bytes> {
     #[inline]
     fn write_byte(&mut self, b: u8) {
-        self.push_slice(slice::ref_slice(&b));
+        self.push_slice(&[b]);
     }
 
     #[inline]
@@ -1080,9 +1081,14 @@ impl Tendril<fmt::UTF8> {
     #[inline]
     pub fn push_char(&mut self, c: char) {
         unsafe {
-            let mut buf: [u8; 4] = mem::uninitialized();
-            let n = c.encode_utf8(&mut buf).expect("Tendril::push_char: internal error");
-            self.push_bytes_without_validating(unsafe_slice(&buf, 0, n));
+            let mut utf_8: [u8; 4] = mem::uninitialized();
+            let bytes_written = {
+                let mut buffer = &mut utf_8[..];
+                write!(buffer, "{}", c).ok().expect("Tendril::push_char: internal error");
+                debug_assert!(buffer.len() <= 4);
+                4 - buffer.len()
+            };
+            self.push_bytes_without_validating(unsafe_slice(&utf_8, 0, bytes_written));
         }
     }
 
