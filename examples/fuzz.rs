@@ -6,7 +6,6 @@
 
 //! A simple fuzz tester for the library.
 
-#![feature(unsafe_no_drop_flag, str_char)]
 #![deny(warnings)]
 
 extern crate rand;
@@ -106,7 +105,7 @@ fn fuzz() {
 fn random_boundary<R: Rng>(rng: &mut R, text: &str) -> usize {
     loop {
         let i = Range::new(0, text.len()+1).ind_sample(rng);
-        if text.is_char_boundary(i) {
+        if is_char_boundary(text, i) {
             return i;
         }
     }
@@ -116,13 +115,22 @@ fn random_slice<R: Rng>(rng: &mut R, text: &str) -> (usize, usize) {
     loop {
         let start = Range::new(0, text.len()+1).ind_sample(rng);
         let end = Range::new(start, text.len()+1).ind_sample(rng);
-        if !text.is_char_boundary(start) {
+        if !is_char_boundary(text, start) {
             continue;
         }
-        if end < text.len() && !text.is_char_boundary(end) {
+        if end < text.len() && !is_char_boundary(text, end) {
             continue;
         }
         return (start, end);
+    }
+}
+
+// Copy of the str::is_char_boundary method, which is unstable.
+fn is_char_boundary(s: &str, index: usize) -> bool {
+    if index == s.len() { return true; }
+    match s.as_bytes().get(index) {
+        None => false,
+        Some(&b) => b < 128 || b >= 192,
     }
 }
 

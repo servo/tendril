@@ -1155,7 +1155,7 @@ impl<'a> From<&'a Tendril<fmt::UTF8>> for String {
 }
 
 
-#[cfg(test)]
+#[cfg(all(test, feature = "unstable"))]
 #[path="bench.rs"]
 mod bench;
 
