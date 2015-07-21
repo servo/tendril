@@ -4,7 +4,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[cfg(feature = "unstable")] use core::nonzero::NonZero;
 use std::{slice, intrinsics};
 use std::mem;
 
@@ -40,6 +39,8 @@ pub unsafe fn copy_lifetime<'a, S: ?Sized, T: ?Sized + 'a>
                            (_ptr: &'a S, ptr: &T) -> &'a T {
     mem::transmute(ptr)
 }
+
+#[cfg(feature = "unstable")] pub use core::nonzero::NonZero;
 
 #[cfg(not(feature = "unstable"))]
 #[derive(Copy, Clone)]
