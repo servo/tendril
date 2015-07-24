@@ -19,8 +19,9 @@
 //! the format sneaks in. For that reason, these traits require
 //! `unsafe impl`.
 
-use std::{char, str, mem, slice};
+use std::{char, str, mem};
 use std::default::Default;
+use std::io::Write;
 
 use futf::{self, Codepoint, Meaning};
 
@@ -266,8 +267,7 @@ unsafe impl<'a> CharFormat<'a> for ASCII {
     {
         let n = ch as u32;
         if n > 0x7F { return Err(()); }
-        let n = n as u8;
-        cont(slice::ref_slice(&n));
+        cont(&[n as u8]);
         Ok(())
     }
 }
@@ -344,10 +344,14 @@ unsafe impl<'a> CharFormat<'a> for UTF8 {
         where F: FnOnce(&[u8])
     {
         unsafe {
-            let mut buf: [u8; 4] = mem::uninitialized();
-            let n = ch.encode_utf8(&mut buf).expect("Tendril: internal error");
-            debug_assert!(n <= 4);
-            cont(unsafe_slice(&buf, 0, n));
+            let mut utf_8: [u8; 4] = mem::uninitialized();
+            let bytes_written = {
+                let mut buffer = &mut utf_8[..];
+                write!(buffer, "{}", ch).ok().expect("Tendril: internal error");
+                debug_assert!(buffer.len() <= 4);
+                4 - buffer.len()
+            };
+            cont(unsafe_slice(&utf_8, 0, bytes_written));
             Ok(())
         }
     }
@@ -434,9 +438,14 @@ unsafe impl Format for WTF8 {
                 };
 
                 let n = 0x10000 + ((hi as u32) << 10) + (lo as u32);
-                fixup.insert_len = char::from_u32(n).expect(ERR)
-                    .encode_utf8(&mut fixup.insert_bytes).expect(ERR)
-                    as u32;
+
+                fixup.insert_len = {
+                    let mut buffer = &mut fixup.insert_bytes[..];
+                    write!(buffer, "{}", char::from_u32(n).expect(ERR)).ok().expect(ERR);
+                    debug_assert!(buffer.len() <= 4);
+                    4 - buffer.len() as u32
+                };
+
                 return fixup;
             }
         }
@@ -491,8 +500,7 @@ unsafe impl<'a> CharFormat<'a> for Latin1 {
     {
         let n = ch as u32;
         if n > 0xFF { return Err(()); }
-        let n = n as u8;
-        cont(slice::ref_slice(&n));
+        cont(&[n as u8]);
         Ok(())
     }
 }

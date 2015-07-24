@@ -4,17 +4,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(alloc, core, unsafe_no_drop_flag, filling_drop, unicode, ref_slice, nonzero, heap_api, oom)]
-#![cfg_attr(test, feature(test, str_char))]
-#![deny(warnings)]
+#![cfg_attr(feature = "unstable", feature(core, nonzero, unsafe_no_drop_flag, filling_drop))]
+#![cfg_attr(all(test, feature = "unstable"), feature(test, str_char))]
+#![cfg_attr(test, deny(warnings))]
 
-extern crate alloc;
-extern crate core;
+#[cfg(feature = "unstable")] extern crate core;
 #[macro_use] extern crate mac;
 extern crate futf;
 extern crate encoding;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "unstable"))]
 extern crate test;
 
 pub use tendril::{Tendril, ByteTendril, StrTendril, SliceExt, ReadExt, SubtendrilError};

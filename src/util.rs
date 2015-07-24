@@ -40,3 +40,26 @@ pub unsafe fn copy_lifetime<'a, S: ?Sized, T: ?Sized + 'a>
     mem::transmute(ptr)
 }
 
+#[cfg(feature = "unstable")] pub use core::nonzero::NonZero;
+
+#[cfg(not(feature = "unstable"))]
+#[derive(Copy, Clone)]
+pub struct NonZero<T>(T);
+
+#[cfg(not(feature = "unstable"))]
+impl<T> NonZero<T> {
+    pub unsafe fn new(x: T) -> NonZero<T> { NonZero(x) }
+}
+
+#[cfg(not(feature = "unstable"))]
+impl<T> ::std::ops::Deref for NonZero<T> {
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &T { &self.0 }
+}
+
+#[cfg(not(feature = "unstable"))]
+pub fn is_post_drop(_: usize) -> bool { false }
+
+#[cfg(feature = "unstable")]
+pub fn is_post_drop(x: usize) -> bool { x == mem::POST_DROP_USIZE }
