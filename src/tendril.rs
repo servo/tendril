@@ -9,7 +9,7 @@ use std::borrow::{Borrow, Cow};
 use std::marker::PhantomData;
 use std::cell::Cell;
 use std::ops::{Deref, DerefMut};
-use std::iter::IntoIterator;
+use std::iter::FromIterator;
 use std::io::Write;
 use std::default::Default;
 use std::cmp::Ordering;
@@ -147,8 +147,118 @@ impl<F> Drop for Tendril<F>
     }
 }
 
-// impl FromIterator<char> for Tendril<fmt::UTF8> { }
-// impl FromIterator<u8> for Tendril<fmt::Bytes> { }
+macro_rules! from_iter_method {
+    ($ty:ty) => {
+        #[inline]
+        fn from_iter<I>(iterable: I) -> Self
+            where I: IntoIterator<Item = $ty>
+        {
+            let mut output = Self::new();
+            output.extend(iterable);
+            output
+        }
+    }
+}
+
+impl Extend<char> for Tendril<fmt::UTF8> {
+    #[inline]
+    fn extend<I>(&mut self, iterable: I)
+        where I: IntoIterator<Item = char>,
+    {
+        let iterator = iterable.into_iter();
+        self.force_reserve(iterator.size_hint().0 as u32);
+        for c in iterator {
+            self.push_char(c);
+        }
+    }
+}
+
+impl FromIterator<char> for Tendril<fmt::UTF8> {
+    from_iter_method!(char);
+}
+
+impl Extend<u8> for Tendril<fmt::Bytes> {
+    #[inline]
+    fn extend<I>(&mut self, iterable: I)
+        where I: IntoIterator<Item = u8>,
+    {
+        let iterator = iterable.into_iter();
+        self.force_reserve(iterator.size_hint().0 as u32);
+        for b in iterator {
+            self.push_slice(&[b]);
+        }
+    }
+}
+
+impl FromIterator<u8> for Tendril<fmt::Bytes> {
+    from_iter_method!(u8);
+}
+
+impl<'a> Extend<&'a u8> for Tendril<fmt::Bytes> {
+    #[inline]
+    fn extend<I>(&mut self, iterable: I)
+        where I: IntoIterator<Item = &'a u8>,
+    {
+        let iterator = iterable.into_iter();
+        self.force_reserve(iterator.size_hint().0 as u32);
+        for &b in iterator {
+            self.push_slice(&[b]);
+        }
+    }
+}
+
+impl<'a> FromIterator<&'a u8> for Tendril<fmt::Bytes> {
+    from_iter_method!(&'a u8);
+}
+
+impl<'a> Extend<&'a str> for Tendril<fmt::UTF8> {
+    #[inline]
+    fn extend<I>(&mut self, iterable: I)
+        where I: IntoIterator<Item = &'a str>,
+    {
+        for s in iterable {
+            self.push_slice(s);
+        }
+    }
+}
+
+impl<'a> FromIterator<&'a str> for Tendril<fmt::UTF8> {
+    from_iter_method!(&'a str);
+}
+
+impl<'a> Extend<&'a [u8]> for Tendril<fmt::Bytes> {
+    #[inline]
+    fn extend<I>(&mut self, iterable: I)
+        where I: IntoIterator<Item = &'a [u8]>,
+    {
+        for s in iterable {
+            self.push_slice(s);
+        }
+    }
+}
+
+impl<'a> FromIterator<&'a [u8]> for Tendril<fmt::Bytes> {
+    from_iter_method!(&'a [u8]);
+}
+
+impl<'a, F> Extend<&'a Tendril<F>> for Tendril<F>
+    where F: fmt::Format + 'a,
+{
+    #[inline]
+    fn extend<I>(&mut self, iterable: I)
+        where I: IntoIterator<Item = &'a Tendril<F>>,
+    {
+        for t in iterable {
+            self.push_tendril(t);
+        }
+    }
+}
+
+impl<'a, F> FromIterator<&'a Tendril<F>> for Tendril<F>
+    where F: fmt::Format + 'a,
+{
+    from_iter_method!(&'a Tendril<F>);
+}
 
 impl<F> Deref for Tendril<F>
     where F: fmt::SliceFormat,
@@ -174,20 +284,6 @@ impl<F> Borrow<[u8]> for Tendril<F>
 // Why not impl Borrow<str> for Tendril<fmt::UTF8>? str and [u8] hash differently,
 // and so a HashMap<StrTendril, _> would silently break if we indexed by str. Ick.
 // https://github.com/rust-lang/rust/issues/27108
-
-impl<'a, F> Extend<&'a Tendril<F>> for Tendril<F>
-    where F: fmt::Format + 'a,
-{
-    #[inline]
-    fn extend<I>(&mut self, iterable: I)
-        where I: IntoIterator<Item = &'a Tendril<F>>,
-    {
-        let iterator = iterable.into_iter();
-        for t in iterator {
-            self.push_tendril(t);
-        }
-    }
-}
 
 impl<F> PartialEq for Tendril<F>
     where F: fmt::Format,
@@ -292,12 +388,16 @@ impl<F> Tendril<F>
     /// decline to allocate until the buffer is actually modified.
     #[inline]
     pub fn reserve(&mut self, additional: u32) {
-        if self.is_shared() {
+        if !self.is_shared() {
             // Don't grow a shared tendril because we'd have to copy
             // right away.
-            return;
+            self.force_reserve(additional);
         }
+    }
 
+    /// Reserve space for additional bytes, even for shared buffers.
+    #[inline]
+    fn force_reserve(&mut self, additional: u32) {
         let new_len = self.len32().checked_add(additional).expect(OFLOW);
         if new_len > MAX_INLINE_LEN as u32 {
             unsafe {
@@ -1698,12 +1798,60 @@ mod test {
     }
 
     #[test]
-    fn extend() {
+    fn extend_and_from_iterator() {
+        // Testing Extend<T> and FromIterator<T> for the various Ts.
+
+        // Tendril<F>
         let mut t = "Hello".to_tendril();
-        t.extend(None.into_iter());
+        t.extend(None::<&Tendril<_>>.into_iter());
         assert_eq!("Hello", &*t);
         t.extend(&[", ".to_tendril(), "world".to_tendril(), "!".to_tendril()]);
         assert_eq!("Hello, world!", &*t);
+        assert_eq!("Hello, world!", &*["Hello".to_tendril(), ", ".to_tendril(),
+                                       "world".to_tendril(), "!".to_tendril()]
+                                    .iter().collect::<StrTendril>());
+
+        // &str
+        let mut t = "Hello".to_tendril();
+        t.extend(None::<&str>.into_iter());
+        assert_eq!("Hello", &*t);
+        t.extend([", ", "world", "!"].iter().map(|&s| s));
+        assert_eq!("Hello, world!", &*t);
+        assert_eq!("Hello, world!", &*["Hello", ", ", "world", "!"]
+                                    .iter().map(|&s| s).collect::<StrTendril>());
+
+        // &[u8]
+        let mut t = b"Hello".to_tendril();
+        t.extend(None::<&[u8]>.into_iter());
+        assert_eq!(b"Hello", &*t);
+        t.extend([b", " as &[u8], b"world" as &[u8], b"!" as &[u8]].iter().map(|&s| s));
+        assert_eq!(b"Hello, world!", &*t);
+        assert_eq!(b"Hello, world!", &*[b"Hello" as &[u8], b", " as &[u8],
+                                        b"world" as &[u8], b"!" as &[u8]]
+                                    .iter().map(|&s| s).collect::<ByteTendril>());
+
+        let string = "the quick brown fox jumps over the lazy dog";
+        let string_expected = string.to_tendril();
+        let bytes = string.as_bytes();
+        let bytes_expected = bytes.to_tendril();
+
+        // char
+        assert_eq!(string_expected, string.chars().collect());
+        let mut tendril = StrTendril::new();
+        tendril.extend(string.chars());
+        assert_eq!(string_expected, tendril);
+
+        // &u8
+        assert_eq!(bytes_expected, bytes.iter().collect());
+        let mut tendril = ByteTendril::new();
+        tendril.extend(bytes);
+        assert_eq!(bytes_expected, tendril);
+
+        // u8
+        assert_eq!(bytes_expected, bytes.iter().map(|&b| b).collect());
+        let mut tendril = ByteTendril::new();
+        tendril.extend(bytes.iter().map(|&b| b));
+        assert_eq!(bytes_expected, tendril);
     }
 
     #[test]
