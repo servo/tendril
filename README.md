@@ -3,7 +3,7 @@
 **Warning**: This library is at a very early stage of development, and it
 contains a substantial amount of `unsafe` code. Use at your own risk!
 
-[![Build Status](https://travis-ci.org/kmcallister/tendril.svg?branch=master)](https://travis-ci.org/kmcallister/tendril)
+[![Build Status](https://travis-ci.org/servo/tendril.svg?branch=master)](https://travis-ci.org/servo/tendril)
 
 [API Documentation](https://kmcallister.github.io/docs/tendril/tendril/index.html)
 
