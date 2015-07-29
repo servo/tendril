@@ -607,6 +607,26 @@ impl<F, A> Tendril<F, A>
         unsafe { mem::transmute(self) }
     }
 
+    /// Convert `self` into a type which is `Send`.
+    ///
+    /// If the tendril is owned or inline, this is free,
+    /// but if it's shared this will entail a copy of the contents.
+    #[inline]
+    pub fn into_send(mut self) -> SendTendril<F> {
+        let len = self.len32();
+        if len > MAX_INLINE_LEN as u32 {
+            unsafe {
+                self.make_owned_with_capacity(len);
+            }
+        }
+        debug_assert!(!self.is_shared());
+        SendTendril {
+            // This changes the header.refcount from A to NonAtomic, but that's
+            // OK because we have defined the format of A as a usize.
+            tendril: unsafe { mem::transmute(self) },
+        }
+    }
+
     /// View as a superset format, for free.
     #[inline(always)]
     pub fn as_superset<Super>(&self) -> &Tendril<Super, A>
@@ -1087,6 +1107,48 @@ impl<F, A> Tendril<F, A>
     }
 }
 
+/// A simple wrapper to make `Tendril` `Send`.
+///
+/// Although there is a certain subset of the operations on a `Tendril` that a `SendTendril` could
+/// reasonably implement, in order to clearly separate concerns this type is deliberately
+/// minimalist, acting as a safe encapsulation around the invariants which permit `Send`ness and
+/// behaving as an opaque object.
+///
+/// A `SendTendril` may be produced by `Tendril.into_send()` or `SendTendril::from(tendril)`,
+/// and may be returned to a `Tendril` by `Tendril::from(self)`.
+pub struct SendTendril<F>
+    where F: fmt::Format,
+{
+    tendril: Tendril<F>,
+}
+
+unsafe impl<F> Send for SendTendril<F> where F: fmt::Format { }
+
+impl<F, A> From<Tendril<F, A>> for SendTendril<F>
+    where F: fmt::Format,
+          A: Atomicity,
+{
+    #[inline]
+    fn from(tendril: Tendril<F, A>) -> SendTendril<F> {
+        tendril.into_send()
+    }
+}
+
+impl<F, A> From<SendTendril<F>> for Tendril<F, A>
+    where F: fmt::Format,
+          A: Atomicity,
+{
+    #[inline]
+    fn from(send: SendTendril<F>) -> Tendril<F, A> {
+        unsafe {
+            mem::transmute(send.tendril)
+        }
+        // header.refcount may have been initialised as an Atomic or a NonAtomic, but the value
+        // will be the same (1) regardless, because the layout is defined.
+        // Thus we don't need to fiddle about resetting it or anything like that.
+    }
+}
+
 /// `Tendril`-related methods for Rust slices.
 pub trait SliceExt: fmt::Slice {
     /// Make a `Tendril` from this slice.
@@ -1450,7 +1512,7 @@ mod bench;
 
 #[cfg(test)]
 mod test {
-    use super::{Tendril, ByteTendril, StrTendril,
+    use super::{Tendril, ByteTendril, StrTendril, SendTendril,
                 ReadExt, SliceExt, Header, NonAtomic, Atomic};
     use fmt;
     use std::iter;
@@ -2103,5 +2165,32 @@ mod test {
         }).join().unwrap();
         assert!(s.is_shared());
         assert_eq!("this is a string", &*s);
+    }
+
+    #[test]
+    fn send() {
+        assert_send::<SendTendril<fmt::UTF8>>();
+        let s = "this is a string".to_tendril();
+        let t = s.clone();
+        let s2 = s.into_send();
+        thread::spawn(move || {
+            let s = StrTendril::from(s2);
+            assert!(!s.is_shared());
+            assert_eq!("this is a string", &*s);
+        }).join().unwrap();
+        assert_eq!("this is a string", &*t);
+    }
+
+    #[test]
+    fn inline_send() {
+        let s = "x".to_tendril();
+        let t = s.clone();
+        let s2 = s.into_send();
+        thread::spawn(move || {
+            let s = StrTendril::from(s2);
+            assert!(!s.is_shared());
+            assert_eq!("x", &*s);
+        }).join().unwrap();
+        assert_eq!("x", &*t);
     }
 }
