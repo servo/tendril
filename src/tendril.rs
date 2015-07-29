@@ -615,8 +615,8 @@ impl<F, A> Tendril<F, A>
     pub fn into_send(mut self) -> SendTendril<F> {
         self.make_owned();
         SendTendril {
-            // The format of the header.refcount is undefined from this point.
-            // It is reinitialised when we convert back to a Tendril (possibly with a different A).
+            // This changes the header.refcount from A to NonAtomic, but that's
+            // OK because we have defined the format of A as a usize.
             tendril: unsafe { mem::transmute(self) },
         }
     }
