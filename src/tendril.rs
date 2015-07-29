@@ -964,21 +964,17 @@ impl<F, A> Tendril<F, A>
     // and going out of your way to make it owned is pointless.
     #[inline]
     fn make_owned(&mut self) {
-        let len = self.len32();
-        if len > MAX_INLINE_LEN as u32 {
-            unsafe {
-                self.make_owned_with_capacity(len);
+        unsafe {
+            let ptr = *self.ptr.get();
+            if ptr <= MAX_INLINE_TAG || (ptr & 1) == 1 {
+                *self = Tendril::owned_copy(self.as_byte_slice());
             }
         }
-        debug_assert!(!self.is_shared());
     }
 
     #[inline]
     unsafe fn make_owned_with_capacity(&mut self, cap: u32) {
-        let ptr = *self.ptr.get();
-        if ptr <= MAX_INLINE_TAG || (ptr & 1) == 1 {
-            *self = Tendril::owned_copy(self.as_byte_slice());
-        }
+        self.make_owned();
         let mut buf = self.assume_buf().0;
         buf.grow(cap);
         self.ptr.set(NonZero::new(buf.ptr as usize));
@@ -1077,7 +1073,6 @@ impl<A> DerefMut for Tendril<fmt::Bytes, A>
 {
     #[inline]
     fn deref_mut<'a>(&'a mut self) -> &'a mut [u8] {
-        self.make_owned();
         unsafe {
             match *self.ptr.get() {
                 EMPTY_TAG => &mut [],
@@ -1085,6 +1080,7 @@ impl<A> DerefMut for Tendril<fmt::Bytes, A>
                     slice::from_raw_parts_mut(&mut self.len as *mut u32 as *mut u8, n)
                 }
                 _ => {
+                    self.make_owned();
                     let (mut buf, _, offset) = self.assume_buf();
                     let len = self.len32() as usize;
                     copy_lifetime_mut(self, unsafe_slice_mut(buf.data_mut(), offset as usize, len))
