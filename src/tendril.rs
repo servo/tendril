@@ -613,13 +613,7 @@ impl<F, A> Tendril<F, A>
     /// but if it's shared this will entail a copy of the contents.
     #[inline]
     pub fn into_send(mut self) -> SendTendril<F> {
-        let len = self.len32();
-        if len > MAX_INLINE_LEN as u32 {
-            unsafe {
-                self.make_owned_with_capacity(len);
-            }
-        }
-        debug_assert!(!self.is_shared());
+        self.make_owned();
         SendTendril {
             // This changes the header.refcount from A to NonAtomic, but that's
             // OK because we have defined the format of A as a usize.
@@ -965,6 +959,20 @@ impl<F, A> Tendril<F, A>
         }
     }
 
+    // This is not public as it is of no practical value to users.
+    // By and large they shouldn't need to worry about the distinction at all,
+    // and going out of your way to make it owned is pointless.
+    #[inline]
+    fn make_owned(&mut self) {
+        let len = self.len32();
+        if len > MAX_INLINE_LEN as u32 {
+            unsafe {
+                self.make_owned_with_capacity(len);
+            }
+        }
+        debug_assert!(!self.is_shared());
+    }
+
     #[inline]
     unsafe fn make_owned_with_capacity(&mut self, cap: u32) {
         let ptr = *self.ptr.get();
@@ -1069,6 +1077,7 @@ impl<A> DerefMut for Tendril<fmt::Bytes, A>
 {
     #[inline]
     fn deref_mut<'a>(&'a mut self) -> &'a mut [u8] {
+        self.make_owned();
         unsafe {
             match *self.ptr.get() {
                 EMPTY_TAG => &mut [],
@@ -1815,7 +1824,7 @@ mod test {
     }
 
     #[test]
-    fn deref_mut() {
+    fn deref_mut_inline() {
         let mut t = "xyő".to_tendril().into_bytes();
         t[3] = 0xff;
         assert_eq!(b"xy\xC5\xFF", &*t);
@@ -1833,6 +1842,17 @@ mod test {
             t.pop_back(20);
             assert_eq!("xyŋ\u{a66e}", &**t.try_reinterpret_view::<fmt::UTF8>().unwrap());
         }
+    }
+
+    #[test]
+    fn deref_mut() {
+        let mut t = b"0123456789".to_tendril();
+        let u = t.clone();
+        assert!(t.is_shared());
+        t[9] = 0xff;
+        assert!(!t.is_shared());
+        assert_eq!(b"0123456789", &*u);
+        assert_eq!(b"012345678\xff", &*t);
     }
 
     #[test]
