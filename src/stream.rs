@@ -6,11 +6,12 @@
 
 //! Streams of tendrils.
 
-use tendril::Tendril;
+use tendril::{Tendril, Atomicity};
 use fmt;
 
 use std::{cmp, mem};
 use std::borrow::Cow;
+use std::marker::PhantomData;
 
 use encoding::{self, EncodingRef, RawDecoder, DecoderTrap};
 use futf::{self, Codepoint, Meaning};
@@ -23,11 +24,12 @@ use futf::{self, Codepoint, Meaning};
 /// architecture.
 ///
 /// [html5ever]: https://github.com/servo/html5ever
-pub trait TendrilSink<F>
+pub trait TendrilSink<F, A>
     where F: fmt::Format,
+          A: Atomicity,
 {
     /// Process this tendril.
-    fn process(&mut self, t: Tendril<F>);
+    fn process(&mut self, t: Tendril<F, A>);
 
     /// Indicates the end of the stream.
     ///
@@ -42,18 +44,21 @@ pub trait TendrilSink<F>
 ///
 /// This will copy as little as possible — only the characters that
 /// span a chunk boundary.
-pub struct UTF8Validator<Sink> {
-    pfx: Tendril<fmt::Bytes>,
+pub struct UTF8Validator<Sink, A>
+    where A: Atomicity
+{
+    pfx: Tendril<fmt::Bytes, A>,
     need: usize,
     sink: Sink,
 }
 
-impl<Sink> UTF8Validator<Sink>
-    where Sink: TendrilSink<fmt::UTF8>,
+impl<Sink, A> UTF8Validator<Sink, A>
+    where Sink: TendrilSink<fmt::UTF8, A>,
+          A: Atomicity,
 {
     /// Create a new incremental validator.
     #[inline]
-    pub fn new(sink: Sink) -> UTF8Validator<Sink> {
+    pub fn new(sink: Sink) -> UTF8Validator<Sink, A> {
         UTF8Validator {
             pfx: Tendril::new(),
             need: 0,
@@ -68,17 +73,18 @@ impl<Sink> UTF8Validator<Sink>
     }
 
     fn emit_char(&mut self, c: char) {
-        let mut t: Tendril<fmt::UTF8> = Tendril::new();
+        let mut t: Tendril<fmt::UTF8, A> = Tendril::new();
         t.push_char(c);
         self.sink.process(t);
     }
 }
 
-impl<Sink> TendrilSink<fmt::Bytes> for UTF8Validator<Sink>
-    where Sink: TendrilSink<fmt::UTF8>,
+impl<Sink, A> TendrilSink<fmt::Bytes, A> for UTF8Validator<Sink, A>
+    where Sink: TendrilSink<fmt::UTF8, A>,
+          A: Atomicity,
 {
     #[inline]
-    fn process(&mut self, mut t: Tendril<fmt::Bytes>) {
+    fn process(&mut self, mut t: Tendril<fmt::Bytes, A>) {
         const INVALID: &'static str = "invalid byte sequence(s)";
 
         let cont = cmp::min(self.need, t.len());
@@ -160,20 +166,26 @@ impl<Sink> TendrilSink<fmt::Bytes> for UTF8Validator<Sink>
 /// This will write the decoded characters into new tendrils.
 /// To validate UTF-8 without copying, see `UTF8Validator`
 /// in this module.
-pub struct Decoder<Sink> {
+pub struct Decoder<Sink, A>
+    where Sink: TendrilSink<fmt::UTF8, A>,
+          A: Atomicity,
+{
     decoder: Box<RawDecoder>,
     sink: Sink,
+    marker: PhantomData<A>,
 }
 
-impl<Sink> Decoder<Sink>
-    where Sink: TendrilSink<fmt::UTF8>,
+impl<Sink, A> Decoder<Sink, A>
+    where Sink: TendrilSink<fmt::UTF8, A>,
+          A: Atomicity,
 {
     /// Create a new incremental decoder.
     #[inline]
-    pub fn new(encoding: EncodingRef, sink: Sink) -> Decoder<Sink> {
+    pub fn new(encoding: EncodingRef, sink: Sink) -> Decoder<Sink, A> {
         Decoder {
             decoder: encoding.raw_decoder(),
             sink: sink,
+            marker: PhantomData,
         }
     }
 
@@ -184,11 +196,12 @@ impl<Sink> Decoder<Sink>
     }
 }
 
-impl<Sink> TendrilSink<fmt::Bytes> for Decoder<Sink>
-    where Sink: TendrilSink<fmt::UTF8>,
+impl<Sink, A> TendrilSink<fmt::Bytes, A> for Decoder<Sink, A>
+    where Sink: TendrilSink<fmt::UTF8, A>,
+          A: Atomicity,
 {
     #[inline]
-    fn process(&mut self, mut t: Tendril<fmt::Bytes>) {
+    fn process(&mut self, mut t: Tendril<fmt::Bytes, A>) {
         let mut out = Tendril::new();
         loop {
             match self.decoder.raw_feed(&*t, &mut out) {
@@ -229,19 +242,23 @@ impl<Sink> TendrilSink<fmt::Bytes> for Decoder<Sink>
 #[cfg(test)]
 mod test {
     use super::{TendrilSink, Decoder, UTF8Validator};
-    use tendril::{Tendril, SliceExt};
+    use tendril::{Tendril, Atomicity, SliceExt, NonAtomic};
     use fmt;
     use std::borrow::Cow;
     use encoding::EncodingRef;
     use encoding::all as enc;
 
-    struct Accumulate {
-        tendrils: Vec<Tendril<fmt::UTF8>>,
+    struct Accumulate<A>
+        where A: Atomicity,
+    {
+        tendrils: Vec<Tendril<fmt::UTF8, A>>,
         errors: Vec<String>,
     }
 
-    impl Accumulate {
-        fn new() -> Accumulate {
+    impl<A> Accumulate<A>
+        where A: Atomicity,
+    {
+        fn new() -> Accumulate<A> {
             Accumulate {
                 tendrils: vec![],
                 errors: vec![],
@@ -249,8 +266,10 @@ mod test {
         }
     }
 
-    impl TendrilSink<fmt::UTF8> for Accumulate {
-        fn process(&mut self, t: Tendril<fmt::UTF8>) {
+    impl<A> TendrilSink<fmt::UTF8, A> for Accumulate<A>
+        where A: Atomicity,
+    {
+        fn process(&mut self, t: Tendril<fmt::UTF8, A>) {
             self.tendrils.push(t);
         }
 
@@ -260,7 +279,7 @@ mod test {
     }
 
     fn check_validate(input: &[&[u8]], expected: &[&str], errs: usize) {
-        let mut validator = UTF8Validator::new(Accumulate::new());
+        let mut validator = UTF8Validator::new(Accumulate::<NonAtomic>::new());
         for x in input {
             validator.process(x.to_tendril());
         }

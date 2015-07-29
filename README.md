@@ -103,18 +103,6 @@ We don't need to share strings between threads, but we do need to move them.
 *Solution:* Provide a **separate type for sendable strings**. Converting to
 this type entails a copy, unless the refcount is 1.
 
-### Optional atomic refcounting
-
-The above `Send` implementation is not good enough for off-main-thread parsing
-in Servo. We will end up copying every small string when we send it to the main
-thread.
-
-*Solution:* Use another phantom type to **designate strings which are
-atomically refcounted**. You "set" this type variable when you create a string
-or promote one from uniquely owned. This statically eliminates the overhead of
-atomic refcounting for consumers who don't need strings to have guaranteed
-zero-copy `Send`. html5ever will be generic over this choice.
-
 ### Source span information
 
 Some html5ever API consumers want to know the originating location in the HTML
