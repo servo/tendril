@@ -96,13 +96,6 @@ complexity, if not a full copy.
 contiguous UTF-16 when necessary**.  The conversion can easily be parallelized,
 if we find a practical need to convert huge chunks of text all at once.
 
-### Sendable
-
-We don't need to share strings between threads, but we do need to move them.
-
-*Solution:* Provide a **separate type for sendable strings**. Converting to
-this type entails a copy, unless the refcount is 1.
-
 ### Source span information
 
 Some html5ever API consumers want to know the originating location in the HTML
