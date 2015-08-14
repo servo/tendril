@@ -1178,15 +1178,35 @@ impl<F, A> Tendril<F, A>
     #[inline]
     pub fn pop_front_char<'a>(&'a mut self) -> Option<char> {
         unsafe {
-            let mut it = F::char_indices(self.as_byte_slice());
-            it.next().map(|(_, c)| {
-                if let Some((n, _)) = it.next() {
-                    self.unsafe_pop_front(n as u32);
-                } else {
-                    self.clear();
+            let next_char; // first char in iterator
+            let mut skip = 0;  // number of bytes to skip, or 0 to clear
+
+            { // <--+
+                //  |  Creating an iterator borrows self, so introduce a
+                //  +- scope to contain the borrow (that way we can mutate
+                //     self below, after this scope exits).
+
+                let mut iter = F::char_indices(self.as_byte_slice());
+                match iter.next() {
+                    Some((_, c)) => {
+                        next_char = Some(c);
+                        if let Some((n, _)) = iter.next() {
+                            skip = n as u32;
+                        }
+                    }
+                    None => {
+                        next_char = None;
+                    }
                 }
-                c
-            })
+            }
+
+            if skip != 0 {
+                self.unsafe_pop_front(skip);
+            } else {
+                self.clear();
+            }
+
+            next_char
         }
     }
 

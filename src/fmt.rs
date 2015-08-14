@@ -156,7 +156,7 @@ pub unsafe trait SubsetOf<Super>: Format
 
 /// Indicates a format which corresponds to a Rust slice type,
 /// representing exactly the same invariants.
-pub unsafe trait SliceFormat: Format {
+pub unsafe trait SliceFormat: Format + Sized {
     type Slice: ?Sized + Slice<Format = Self>;
 }
 
