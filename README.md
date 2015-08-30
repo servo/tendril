@@ -5,7 +5,7 @@ contains a substantial amount of `unsafe` code. Use at your own risk!
 
 [![Build Status](https://travis-ci.org/servo/tendril.svg?branch=master)](https://travis-ci.org/servo/tendril)
 
-[API Documentation](https://kmcallister.github.io/docs/tendril/tendril/index.html)
+[API Documentation](http://doc.servo.org/tendril/index.html)
 
 ## Introduction
 
