@@ -4,7 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::{ptr, mem, intrinsics, hash, str, u32, io, slice, cmp};
+use std::{ptr, mem, hash, str, u32, io, slice, cmp};
 use std::sync::atomic::{self, AtomicUsize};
 use std::sync::atomic::Ordering as AtomicOrdering;
 use std::borrow::{Borrow, Cow};
@@ -1013,7 +1013,7 @@ impl<F, A> Tendril<F, A>
             marker: PhantomData,
             refcount_marker: PhantomData,
         };
-        intrinsics::copy_nonoverlapping(x.as_ptr(), &mut t.len as *mut u32 as *mut u8, len);
+        ptr::copy_nonoverlapping(x.as_ptr(), &mut t.len as *mut u32 as *mut u8, len);
         t
     }
 
@@ -1032,7 +1032,7 @@ impl<F, A> Tendril<F, A>
     unsafe fn owned_copy(x: &[u8]) -> Tendril<F, A> {
         let len32 = x.len() as u32;
         let mut b = Buf32::with_capacity(len32, Header::new());
-        intrinsics::copy_nonoverlapping(x.as_ptr(), b.data_ptr(), x.len());
+        ptr::copy_nonoverlapping(x.as_ptr(), b.data_ptr(), x.len());
         b.len = len32;
         Tendril::owned(b)
     }

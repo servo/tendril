@@ -4,7 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::{slice, intrinsics};
+use std::{slice, ptr};
 use std::mem;
 
 #[inline(always)]
@@ -23,7 +23,7 @@ pub unsafe fn unsafe_slice_mut<'a>(buf: &'a mut [u8], start: usize, new_len: usi
 
 #[inline(always)]
 pub unsafe fn copy_and_advance(dest: &mut *mut u8, src: &[u8]) {
-    intrinsics::copy_nonoverlapping(src.as_ptr(), *dest, src.len());
+    ptr::copy_nonoverlapping(src.as_ptr(), *dest, src.len());
     *dest = dest.offset(src.len() as isize)
 }
 
