@@ -271,7 +271,7 @@ impl<A> Extend<char> for Tendril<fmt::UTF8, A>
         where I: IntoIterator<Item = char>,
     {
         let iterator = iterable.into_iter();
-        self.force_reserve(iterator.size_hint().0 as u32);
+        self.reserve(iterator.size_hint().0 as u32);
         for c in iterator {
             self.push_char(c);
         }
@@ -292,7 +292,7 @@ impl<A> Extend<u8> for Tendril<fmt::Bytes, A>
         where I: IntoIterator<Item = u8>,
     {
         let iterator = iterable.into_iter();
-        self.force_reserve(iterator.size_hint().0 as u32);
+        self.reserve(iterator.size_hint().0 as u32);
         for b in iterator {
             self.push_slice(&[b]);
         }
@@ -313,7 +313,7 @@ impl<'a, A> Extend<&'a u8> for Tendril<fmt::Bytes, A>
         where I: IntoIterator<Item = &'a u8>,
     {
         let iterator = iterable.into_iter();
-        self.force_reserve(iterator.size_hint().0 as u32);
+        self.reserve(iterator.size_hint().0 as u32);
         for &b in iterator {
             self.push_slice(&[b]);
         }
@@ -522,17 +522,17 @@ impl<F, A> Tendril<F, A>
     /// This is only a suggestion. There are cases where `Tendril` will
     /// decline to allocate until the buffer is actually modified.
     #[inline]
-    pub fn reserve(&mut self, additional: u32) {
+    pub fn maybe_reserve(&mut self, additional: u32) {
         if !self.is_shared() {
             // Don't grow a shared tendril because we'd have to copy
             // right away.
-            self.force_reserve(additional);
+            self.reserve(additional);
         }
     }
 
     /// Reserve space for additional bytes, even for shared buffers.
     #[inline]
-    fn force_reserve(&mut self, additional: u32) {
+    fn reserve(&mut self, additional: u32) {
         let new_len = self.len32().checked_add(additional).expect(OFLOW);
         if new_len > MAX_INLINE_LEN as u32 {
             unsafe {
@@ -551,6 +551,21 @@ impl<F, A> Tendril<F, A>
             EMPTY_TAG => 0,
             n if n <= MAX_INLINE_LEN => n as u32,
             _ => self.len,
+        }
+    }
+
+    /// Get the capacity of the `Tendril`.
+    ///
+    /// The capacity is the maximum number of underlyning items that can be added to this
+    /// `Tendril` before triggering an realocation.
+    #[inline(always)]
+    pub fn capacity(&self) -> u32 {
+        unsafe {
+            match *self.ptr.get() {
+                EMPTY_TAG => MAX_INLINE_LEN as u32,
+                n if n <= MAX_INLINE_LEN => MAX_INLINE_LEN as u32,
+                _ => self.assume_buf().0.cap
+            }
         }
     }
 
@@ -855,6 +870,20 @@ impl<F, A> Tendril<F, A>
             Tendril::inline(x)
         } else {
             Tendril::owned_copy(x)
+        }
+    }
+
+    /// Sets the length of a `Tendril`.
+    ///
+    /// This will explicitly set the size of the tendri, without actually
+    /// modifying its buffers, so it is up to the caller to ensure that the
+    /// tendril is actually the specified size.
+    #[inline]
+    pub unsafe fn set_len(&mut self, new_len: u32) {
+        if new_len <= MAX_INLINE_LEN as u32 {
+            self.ptr = Cell::new(inline_tag(new_len as u32))
+        } else {
+            self.len = new_len
         }
     }
 
@@ -1339,7 +1368,7 @@ impl<A> encoding::ByteWriter for Tendril<fmt::Bytes, A>
 
     #[inline]
     fn writer_hint(&mut self, additional: usize) {
-        self.reserve(cmp::min(u32::MAX as usize, additional) as u32);
+        self.maybe_reserve(cmp::min(u32::MAX as usize, additional) as u32);
     }
 }
 
@@ -1422,7 +1451,7 @@ impl<A> encoding::StringWriter for Tendril<fmt::UTF8, A>
 
     #[inline]
     fn writer_hint(&mut self, additional: usize) {
-        self.reserve(cmp::min(u32::MAX as usize, additional) as u32);
+        self.maybe_reserve(cmp::min(u32::MAX as usize, additional) as u32);
     }
 }
 
@@ -2026,7 +2055,7 @@ mod test {
         let a = t.subtendril(1, 10);
 
         assert!(t.is_shared());
-        t.reserve(10);
+        t.maybe_reserve(10);
         assert!(t.is_shared());
 
         let _ = a;
@@ -2229,4 +2258,25 @@ mod test {
         }).join().unwrap();
         assert_eq!("x", &*t);
     }
+
+    // #[test]
+    // fn set_len() {
+    //     let mut base = b"xyz".to_tendril();
+    //     let mut sub = base.subtendril(0, 2);
+
+    //     unsafe { base.set_len(8); }
+    //     assert_eq!(base.len(), 8);
+    //     assert_eq!(&base[0..3], b"xyz");
+    //     assert_eq!(sub.as_ref(), b"xy");
+
+    //     unsafe { base.set_len(64); }
+    //     assert_eq!(base.len(), 64);
+    //     assert_eq!(&base[0..3], b"xyz");
+
+    //     sub = base.subtendril(0, 2);
+    //     base[0] = b'!';
+    //     assert_eq!(base[0], b'!');
+    //     assert_eq!(&base[0..3], b"!yz");
+    //     assert_eq!(sub.as_ref(), b"xy");
+    // }
 }
