@@ -12,6 +12,7 @@
 #[macro_use] extern crate mac;
 extern crate futf;
 extern crate encoding;
+extern crate utf8;
 
 #[cfg(all(test, feature = "unstable"))]
 extern crate test;

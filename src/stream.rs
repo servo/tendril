@@ -9,12 +9,11 @@
 use tendril::{Tendril, Atomicity};
 use fmt;
 
-use std::{cmp, mem};
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use encoding::{self, EncodingRef, RawDecoder, DecoderTrap};
-use futf::{self, Codepoint, Meaning};
+use encoding::{EncodingRef, RawDecoder};
+use utf8;
 
 /// Trait for types that can process a tendril.
 ///
@@ -40,29 +39,30 @@ pub trait TendrilSink<F, A>
     fn error(&mut self, desc: Cow<'static, str>);
 }
 
-/// Incrementally validate a byte stream as UTF-8.
+/// Lossily decode UTF-8 in a byte stream and emit a Unicode (`StrTendril`) stream.
 ///
-/// This will copy as little as possible — only the characters that
-/// span a chunk boundary.
-pub struct UTF8Validator<Sink, A>
-    where A: Atomicity
+/// This does not allocate memory: the output is either subtendrils on the input,
+/// on inline tendrils for a single code point.
+pub struct Utf8LossyDecoder<Sink, A>
+    where Sink: TendrilSink<fmt::UTF8, A>,
+          A: Atomicity
 {
-    pfx: Tendril<fmt::Bytes, A>,
-    need: usize,
+    decoder: utf8::Decoder,
     sink: Sink,
+    marker: PhantomData<A>,
 }
 
-impl<Sink, A> UTF8Validator<Sink, A>
+impl<Sink, A> Utf8LossyDecoder<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity,
 {
     /// Create a new incremental validator.
     #[inline]
-    pub fn new(sink: Sink) -> UTF8Validator<Sink, A> {
-        UTF8Validator {
-            pfx: Tendril::new(),
-            need: 0,
+    pub fn new(sink: Sink) -> Self {
+        Utf8LossyDecoder {
+            decoder: utf8::Decoder::new(),
             sink: sink,
+            marker: PhantomData,
         }
     }
 
@@ -71,86 +71,45 @@ impl<Sink, A> UTF8Validator<Sink, A>
     pub fn into_sink(self) -> Sink {
         self.sink
     }
-
-    fn emit_char(&mut self, c: char) {
-        let mut t: Tendril<fmt::UTF8, A> = Tendril::new();
-        t.push_char(c);
-        self.sink.process(t);
-    }
 }
 
-impl<Sink, A> TendrilSink<fmt::Bytes, A> for UTF8Validator<Sink, A>
+impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity,
 {
     #[inline]
-    fn process(&mut self, mut t: Tendril<fmt::Bytes, A>) {
-        const INVALID: &'static str = "invalid byte sequence(s)";
-
-        let cont = cmp::min(self.need, t.len());
-        if cont > 0 {
-            self.pfx.push_slice(&t[..cont]);
-            t.pop_front(cont as u32);
-            self.need -= cont;
-        }
-
-        if self.need > 0 {
-            return;
-        }
-
-        if self.pfx.len() > 0 {
-            let pfx = mem::replace(&mut self.pfx, Tendril::new());
-            match pfx.try_reinterpret::<fmt::UTF8>() {
-                Ok(s) => {
-                    debug_assert_eq!(1, s.chars().count());
-                    self.sink.process(s);
-                }
-
-                Err(_) => {
-                    self.sink.error(Cow::Borrowed(INVALID));
-                    self.emit_char('\u{fffd}');
+    fn process(&mut self, t: Tendril<fmt::Bytes, A>) {
+        let mut input = &*t;
+        loop {
+            let (ch, s, result) = self.decoder.decode(input);
+            if !ch.is_empty() {
+                self.sink.process(Tendril::from_slice(&*ch));
+            }
+            if !s.is_empty() {
+                // rust-utf8 promises that `s` is a subslice of `&*t`
+                // so this substraction won’t underflow and `subtendril()` won’t panic.
+                let offset = s.as_ptr() as usize - t.as_ptr() as usize;
+                let subtendril = t.subtendril(offset as u32, s.len() as u32);
+                unsafe {
+                    self.sink.process(subtendril.reinterpret_without_validating());
                 }
             }
-        }
-
-        if t.len() == 0 {
-            return;
-        }
-
-        let pop = match futf::classify(&*t, t.len() - 1) {
-            Some(Codepoint { meaning: Meaning::Prefix(n), bytes, rewind }) => {
-                self.pfx.push_slice(bytes);
-                self.need = n;
-                (rewind + 1) as u32
-            }
-            _ => 0,
-        };
-        if pop > 0 {
-            t.pop_back(pop);
-        }
-
-        if t.len() == 0 {
-            return;
-        }
-
-        match t.try_reinterpret::<fmt::UTF8>() {
-            Ok(s) => self.sink.process(s),
-
-            Err(t) => {
-                // FIXME: We don't need to copy the whole chunk
-                self.sink.error(Cow::Borrowed(INVALID));
-                let s = t.decode(encoding::all::UTF_8, DecoderTrap::Replace).unwrap();
-                self.sink.process(s);
+            match result {
+                utf8::Result::Ok | utf8::Result::Incomplete => break,
+                utf8::Result::Error { remaining_input_after_error: remaining } => {
+                    self.sink.error("invalid byte sequence".into());
+                    self.sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
+                    input = remaining;
+                }
             }
         }
     }
 
     #[inline]
     fn finish(&mut self) {
-        if self.need > 0 {
-            debug_assert!(self.pfx.len() != 0);
-            self.sink.error(Cow::Borrowed("incomplete byte sequence at end of stream"));
-            self.emit_char('\u{fffd}');
+        if self.decoder.has_incomplete_sequence() {
+            self.sink.error("incomplete byte sequence at end of stream".into());
+            self.sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
         }
         self.sink.finish();
     }
@@ -164,7 +123,7 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for UTF8Validator<Sink, A>
 /// Incrementally decode a byte stream to UTF-8.
 ///
 /// This will write the decoded characters into new tendrils.
-/// To validate UTF-8 without copying, see `UTF8Validator`
+/// To validate UTF-8 without copying, see `Utf8LossyDecoder`
 /// in this module.
 pub struct Decoder<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
@@ -241,7 +200,7 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Decoder<Sink, A>
 
 #[cfg(test)]
 mod test {
-    use super::{TendrilSink, Decoder, UTF8Validator};
+    use super::{TendrilSink, Decoder, Utf8LossyDecoder};
     use tendril::{Tendril, Atomicity, SliceExt, NonAtomic};
     use fmt;
     use std::borrow::Cow;
@@ -279,17 +238,14 @@ mod test {
     }
 
     fn check_validate(input: &[&[u8]], expected: &[&str], errs: usize) {
-        let mut validator = UTF8Validator::new(Accumulate::<NonAtomic>::new());
+        let mut validator = Utf8LossyDecoder::new(Accumulate::<NonAtomic>::new());
         for x in input {
             validator.process(x.to_tendril());
         }
         validator.finish();
 
         let Accumulate { tendrils, errors } = validator.into_sink();
-        assert_eq!(expected.len(), tendrils.len());
-        for (&e, t) in expected.iter().zip(tendrils.iter()) {
-            assert_eq!(e, &**t);
-        }
+        assert_eq!(expected, &*tendrils.iter().map(|t| &**t).collect::<Vec<_>>());
         assert_eq!(errs, errors.len());
     }
 
@@ -308,9 +264,9 @@ mod test {
         check_validate(&[b"", b"\xEA", b"", b"\x99", b"", b"\xAE", b""], &["\u{a66e}"], 0);
 
         check_validate(&[b"xy\xEA", b"\xFF", b"\x99\xAEz"],
-            &["xy", "\u{fffd}", "\u{fffd}z"], 2);
+            &["xy", "\u{fffd}", "\u{fffd}", "\u{fffd}", "\u{fffd}", "z"], 4);
         check_validate(&[b"xy\xEA\x99", b"\xFFz"],
-            &["xy", "\u{fffd}", "z"], 1);
+            &["xy", "\u{fffd}", "\u{fffd}", "z"], 2);
 
         check_validate(&[b"\xC5\x91\xC5\x91\xC5\x91"], &["őőő"], 0);
         check_validate(&[b"\xC5\x91", b"\xC5\x91", b"\xC5\x91"], &["ő", "ő", "ő"], 0);
