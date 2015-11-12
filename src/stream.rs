@@ -127,11 +127,15 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
 /// in this module.
 pub struct Decoder<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
-          A: Atomicity,
-{
-    decoder: Box<RawDecoder>,
-    sink: Sink,
-    marker: PhantomData<A>,
+          A: Atomicity {
+    inner: DecoderInner<Sink, A>,
+}
+
+enum DecoderInner<Sink, A>
+    where Sink: TendrilSink<fmt::UTF8, A>,
+          A: Atomicity {
+    Utf8(Utf8LossyDecoder<Sink, A>),
+    Other(Box<RawDecoder>, Sink)
 }
 
 impl<Sink, A> Decoder<Sink, A>
@@ -142,16 +146,21 @@ impl<Sink, A> Decoder<Sink, A>
     #[inline]
     pub fn new(encoding: EncodingRef, sink: Sink) -> Decoder<Sink, A> {
         Decoder {
-            decoder: encoding.raw_decoder(),
-            sink: sink,
-            marker: PhantomData,
+            inner: if encoding.name() == "utf-8" {
+                DecoderInner::Utf8(Utf8LossyDecoder::new(sink))
+            } else {
+                DecoderInner::Other(encoding.raw_decoder(), sink)
+            }
         }
     }
 
     /// Consume the decoder and obtain the sink.
     #[inline]
     pub fn into_sink(self) -> Sink {
-        self.sink
+        match self.inner {
+            DecoderInner::Utf8(utf8) => utf8.into_sink(),
+            DecoderInner::Other(_, sink) => sink,
+        }
     }
 }
 
@@ -161,12 +170,17 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Decoder<Sink, A>
 {
     #[inline]
     fn process(&mut self, mut t: Tendril<fmt::Bytes, A>) {
+        let (decoder, sink) = match self.inner {
+            DecoderInner::Utf8(ref mut utf8) => return utf8.process(t),
+            DecoderInner::Other(ref mut decoder, ref mut sink) => (decoder, sink),
+        };
+
         let mut out = Tendril::new();
         loop {
-            match self.decoder.raw_feed(&*t, &mut out) {
+            match decoder.raw_feed(&*t, &mut out) {
                 (_, Some(err)) => {
                     out.push_char('\u{fffd}');
-                    self.sink.error(err.cause);
+                    sink.error(err.cause);
                     debug_assert!(err.upto >= 0);
                     t.pop_front(err.upto as u32);
                     // continue loop and process remainder of t
@@ -175,26 +189,34 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Decoder<Sink, A>
             }
         }
         if out.len() > 0 {
-            self.sink.process(out);
+            sink.process(out);
         }
     }
 
     #[inline]
     fn finish(&mut self) {
+        let (decoder, sink) = match self.inner {
+            DecoderInner::Utf8(ref mut utf8) => return utf8.finish(),
+            DecoderInner::Other(ref mut decoder, ref mut sink) => (decoder, sink),
+        };
+
         let mut out = Tendril::new();
-        if let Some(err) = self.decoder.raw_finish(&mut out) {
+        if let Some(err) = decoder.raw_finish(&mut out) {
             out.push_char('\u{fffd}');
-            self.sink.error(err.cause);
+            sink.error(err.cause);
         }
         if out.len() > 0 {
-            self.sink.process(out);
+            sink.process(out);
         }
-        self.sink.finish();
+        sink.finish();
     }
 
     #[inline]
     fn error(&mut self, desc: Cow<'static, str>) {
-        self.sink.error(desc);
+        match self.inner {
+            DecoderInner::Utf8(ref mut utf8) => utf8.error(desc),
+            DecoderInner::Other(_, ref mut sink) => sink.error(desc),
+        }
     }
 }
 
