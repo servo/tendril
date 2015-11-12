@@ -1003,11 +1003,21 @@ impl<F, A> Tendril<F, A>
 
     #[inline]
     unsafe fn make_owned_with_capacity(&mut self, cap: u32) {
-        self.make_owned();
-        let mut buf = self.assume_buf().0;
-        buf.grow(cap);
-        self.ptr.set(NonZero::new(buf.ptr as usize));
-        self.aux.set(buf.cap);
+        let ptr = *self.ptr.get();
+        if ptr <= MAX_INLINE_TAG || (ptr & 1) == 1 {
+            let mut b = Buf32::with_capacity(cap, Header::new());
+            {
+                let self_slice = self.as_byte_slice();
+                ptr::copy_nonoverlapping(self_slice.as_ptr(), b.data_ptr(), self_slice.len());
+                b.len = self_slice.len() as u32;
+            }
+            *self = Tendril::owned(b);
+        } else {
+            let mut buf = self.assume_buf().0;
+            buf.grow(cap);
+            self.ptr.set(NonZero::new(buf.ptr as usize));
+            self.aux.set(buf.cap);
+        }
     }
 
     #[inline(always)]
