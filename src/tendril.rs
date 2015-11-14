@@ -532,7 +532,7 @@ impl<F, A> Tendril<F, A>
 
     /// Reserve space for additional bytes, even for shared buffers.
     #[inline]
-    fn reserve(&mut self, additional: u32) {
+    pub fn reserve(&mut self, additional: u32) {
         let new_len = self.len32().checked_add(additional).expect(OFLOW);
         if new_len > MAX_INLINE_LEN as u32 {
             unsafe {
@@ -562,8 +562,8 @@ impl<F, A> Tendril<F, A>
     pub fn capacity(&self) -> u32 {
         unsafe {
             match *self.ptr.get() {
-                EMPTY_TAG => MAX_INLINE_LEN as u32,
-                n if n <= MAX_INLINE_LEN => MAX_INLINE_LEN as u32,
+                n if n <= MAX_INLINE_TAG => MAX_INLINE_LEN as u32,
+                n if n & 1 == 1 => self.len,
                 _ => self.assume_buf().0.cap
             }
         }
@@ -875,13 +875,15 @@ impl<F, A> Tendril<F, A>
 
     /// Sets the length of a `Tendril`.
     ///
-    /// This will explicitly set the size of the tendri, without actually
+    /// This will explicitly set the length of the tendri, without actually
     /// modifying its buffers, so it is up to the caller to ensure that the
-    /// tendril is actually the specified size.
+    /// tendril capacity is >= the new length.
     #[inline]
     pub unsafe fn set_len(&mut self, new_len: u32) {
         if new_len <= MAX_INLINE_LEN as u32 {
-            self.ptr = Cell::new(inline_tag(new_len as u32))
+            *self = Tendril::inline(unsafe_slice(self.as_byte_slice(),
+                0, cmp::min(self.len32(), new_len) as usize));
+            self.ptr = Cell::new(inline_tag(new_len));
         } else {
             self.len = new_len
         }
@@ -2269,24 +2271,30 @@ mod test {
         assert_eq!("x", &*t);
     }
 
-    // #[test]
-    // fn set_len() {
-    //     let mut base = b"xyz".to_tendril();
-    //     let mut sub = base.subtendril(0, 2);
+    #[test]
+    fn set_len() {
+        let mut base = b"xyz".to_tendril();
+        let mut sub = base.subtendril(0, 2);
 
-    //     unsafe { base.set_len(8); }
-    //     assert_eq!(base.len(), 8);
-    //     assert_eq!(&base[0..3], b"xyz");
-    //     assert_eq!(sub.as_ref(), b"xy");
+        unsafe { base.set_len(8); }
+        assert_eq!(base.len(), 8);
+        assert_eq!(&base[0..3], b"xyz");
+        assert_eq!(sub.as_ref(), b"xy");
 
-    //     unsafe { base.set_len(64); }
-    //     assert_eq!(base.len(), 64);
-    //     assert_eq!(&base[0..3], b"xyz");
+        unsafe {
+            let prev_cap = base.capacity();
+            base.reserve(64 - prev_cap);
+            assert!(base.capacity() >= 64);
+            base.set_len(64);
+        }
+        assert_eq!(base.len(), 64);
+        assert_eq!(&base[0..3], b"xyz");
 
-    //     sub = base.subtendril(0, 2);
-    //     base[0] = b'!';
-    //     assert_eq!(base[0], b'!');
-    //     assert_eq!(&base[0..3], b"!yz");
-    //     assert_eq!(sub.as_ref(), b"xy");
-    // }
+        sub = base.subtendril(0, 10);
+        // asking for a mut slice will make it owned
+        base[0] = b'!';
+        // subslice will be backed by the older buffer
+        assert_eq!(sub[0], b'x');
+        assert_eq!(&base[0..3], b"!yz");
+    }
 }
