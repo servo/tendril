@@ -4,7 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![cfg_attr(feature = "unstable", feature(core, nonzero, unsafe_no_drop_flag, filling_drop))]
+#![cfg_attr(feature = "unstable", feature(nonzero, unsafe_no_drop_flag, filling_drop))]
 #![cfg_attr(all(test, feature = "unstable"), feature(test, str_char))]
 #![cfg_attr(test, deny(warnings))]
 
