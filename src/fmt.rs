@@ -191,6 +191,12 @@ pub unsafe trait Slice {
     /// You may assume the buffer is *already validated*
     /// for `Format`.
     unsafe fn from_bytes(x: &[u8]) -> &Self;
+
+    /// Convert a byte slice to this kind of slice.
+    ///
+    /// You may assume the buffer is *already validated*
+    /// for `Format`.
+    unsafe fn from_mut_bytes(x: &mut [u8]) -> &mut Self;
 }
 
 /// Marker type for uninterpreted bytes.
@@ -220,6 +226,11 @@ unsafe impl Slice for [u8] {
 
     #[inline(always)]
     unsafe fn from_bytes(x: &[u8]) -> &[u8] {
+        x
+    }
+
+    #[inline(always)]
+    unsafe fn from_mut_bytes(x: &mut [u8]) -> &mut [u8] {
         x
     }
 }
@@ -328,6 +339,11 @@ unsafe impl Slice for str {
     #[inline(always)]
     unsafe fn from_bytes(x: &[u8]) -> &str {
         str::from_utf8_unchecked(x)
+    }
+
+    #[inline(always)]
+    unsafe fn from_mut_bytes(x: &mut [u8]) -> &mut str {
+        mem::transmute(x)
     }
 }
 

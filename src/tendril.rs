@@ -399,6 +399,18 @@ impl<F, A> Deref for Tendril<F, A>
     }
 }
 
+impl<F, A> DerefMut for Tendril<F, A>
+    where F: fmt::SliceFormat,
+          A: Atomicity,
+{
+    #[inline]
+    fn deref_mut(&mut self) -> &mut F::Slice {
+        unsafe {
+            F::Slice::from_mut_bytes(self.as_mut_byte_slice())
+        }
+    }
+}
+
 impl<F, A> Borrow<[u8]> for Tendril<F, A>
     where F: fmt::SliceFormat,
           A: Atomicity,
@@ -1064,15 +1076,11 @@ impl<F, A> Tendril<F, A>
             }
         }
     }
-}
 
-// There's no need to worry about locking on an atomic Tendril, because it makes it unique as
-// soon as you do that.
-impl<A> DerefMut for Tendril<fmt::Bytes, A>
-    where A: Atomicity,
-{
+    // There's no need to worry about locking on an atomic Tendril, because it makes it unique as
+    // soon as you do that.
     #[inline]
-    fn deref_mut<'a>(&'a mut self) -> &'a mut [u8] {
+    fn as_mut_byte_slice<'a>(&'a mut self) -> &'a mut [u8] {
         unsafe {
             match *self.ptr.get() {
                 EMPTY_TAG => &mut [],
@@ -1089,7 +1097,6 @@ impl<A> DerefMut for Tendril<fmt::Bytes, A>
         }
     }
 }
-
 
 impl<F, A> Tendril<F, A>
     where F: fmt::SliceFormat,
