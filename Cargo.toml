@@ -13,7 +13,7 @@ description = "Compact buffer/string type for zero-copy parsing"
 mac = "0"
 encoding = "0"
 futf = "0.1.1"
-utf-8 = "0.5"
+utf-8 = "0.6"
 
 [dev-dependencies]
 rand = "0"

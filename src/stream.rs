@@ -30,16 +30,34 @@ pub trait TendrilSink<F, A>
     /// Process this tendril.
     fn process(&mut self, t: Tendril<F, A>);
 
-    /// Indicates the end of the stream.
-    ///
-    /// By default, does nothing.
-    fn finish(&mut self) { }
-
     /// Indicates that an error has occurred.
     fn error(&mut self, desc: Cow<'static, str>);
+
+    /// What the overall result of processing is.
+    type Output;
+
+    /// Indicates the end of the stream.
+    fn finish(self) -> Self::Output;
+
+    /// Process one tendril and finish.
+    fn one(mut self, t: Tendril<F, A>) -> Self::Output where Self: Sized {
+        self.process(t);
+        self.finish()
+    }
+
+    /// Consume an iterator of tendrils, processing each item, then finish.
+    fn from_iter<I>(mut self, i: I) -> Self::Output
+    where Self: Sized, I: IntoIterator<Item=Tendril<F, A>> {
+        for t in i {
+            self.process(t)
+        }
+        self.finish()
+    }
 }
 
-/// Lossily decode UTF-8 in a byte stream and emit a Unicode (`StrTendril`) stream.
+/// A `TendrilSink` adaptor that takes bytes, decodes them as UTF-8,
+/// lossily replace ill-formed byte sequences with U+FFFD replacement characters,
+/// and emits Unicode (`StrTendril`).
 ///
 /// This does not allocate memory: the output is either subtendrils on the input,
 /// on inline tendrils for a single code point.
@@ -64,12 +82,6 @@ impl<Sink, A> Utf8LossyDecoder<Sink, A>
             sink: sink,
             marker: PhantomData,
         }
-    }
-
-    /// Consume the validator and obtain the sink.
-    #[inline]
-    pub fn into_sink(self) -> Sink {
-        self.sink
     }
 }
 
@@ -106,73 +118,66 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
     }
 
     #[inline]
-    fn finish(&mut self) {
+    fn error(&mut self, desc: Cow<'static, str>) {
+        self.sink.error(desc);
+    }
+
+    type Output = Sink::Output;
+
+    #[inline]
+    fn finish(mut self) -> Sink::Output {
         if self.decoder.has_incomplete_sequence() {
             self.sink.error("incomplete byte sequence at end of stream".into());
             self.sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
         }
-        self.sink.finish();
-    }
-
-    #[inline]
-    fn error(&mut self, desc: Cow<'static, str>) {
-        self.sink.error(desc);
+        self.sink.finish()
     }
 }
 
-/// Incrementally decode a byte stream to UTF-8.
+/// A `TendrilSink` adaptor that takes bytes, decodes them as the given character encoding,
+/// lossily replace ill-formed byte sequences with U+FFFD replacement characters,
+/// and emits Unicode (`StrTendril`).
 ///
-/// This will write the decoded characters into new tendrils.
-/// To validate UTF-8 without copying, see `Utf8LossyDecoder`
-/// in this module.
-pub struct Decoder<Sink, A>
+/// This allocates new tendrils for encodings other than UTF-8.
+pub struct LossyDecoder<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity {
-    inner: DecoderInner<Sink, A>,
+    inner: LossyDecoderInner<Sink, A>,
 }
 
-enum DecoderInner<Sink, A>
+enum LossyDecoderInner<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity {
     Utf8(Utf8LossyDecoder<Sink, A>),
     Other(Box<RawDecoder>, Sink)
 }
 
-impl<Sink, A> Decoder<Sink, A>
+impl<Sink, A> LossyDecoder<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity,
 {
     /// Create a new incremental decoder.
     #[inline]
-    pub fn new(encoding: EncodingRef, sink: Sink) -> Decoder<Sink, A> {
-        Decoder {
+    pub fn new(encoding: EncodingRef, sink: Sink) -> LossyDecoder<Sink, A> {
+        LossyDecoder {
             inner: if encoding.name() == "utf-8" {
-                DecoderInner::Utf8(Utf8LossyDecoder::new(sink))
+                LossyDecoderInner::Utf8(Utf8LossyDecoder::new(sink))
             } else {
-                DecoderInner::Other(encoding.raw_decoder(), sink)
+                LossyDecoderInner::Other(encoding.raw_decoder(), sink)
             }
-        }
-    }
-
-    /// Consume the decoder and obtain the sink.
-    #[inline]
-    pub fn into_sink(self) -> Sink {
-        match self.inner {
-            DecoderInner::Utf8(utf8) => utf8.into_sink(),
-            DecoderInner::Other(_, sink) => sink,
         }
     }
 }
 
-impl<Sink, A> TendrilSink<fmt::Bytes, A> for Decoder<Sink, A>
+impl<Sink, A> TendrilSink<fmt::Bytes, A> for LossyDecoder<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity,
 {
     #[inline]
     fn process(&mut self, mut t: Tendril<fmt::Bytes, A>) {
         let (decoder, sink) = match self.inner {
-            DecoderInner::Utf8(ref mut utf8) => return utf8.process(t),
-            DecoderInner::Other(ref mut decoder, ref mut sink) => (decoder, sink),
+            LossyDecoderInner::Utf8(ref mut utf8) => return utf8.process(t),
+            LossyDecoderInner::Other(ref mut decoder, ref mut sink) => (decoder, sink),
         };
 
         let mut out = Tendril::new();
@@ -194,10 +199,20 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Decoder<Sink, A>
     }
 
     #[inline]
-    fn finish(&mut self) {
-        let (decoder, sink) = match self.inner {
-            DecoderInner::Utf8(ref mut utf8) => return utf8.finish(),
-            DecoderInner::Other(ref mut decoder, ref mut sink) => (decoder, sink),
+    fn error(&mut self, desc: Cow<'static, str>) {
+        match self.inner {
+            LossyDecoderInner::Utf8(ref mut utf8) => utf8.error(desc),
+            LossyDecoderInner::Other(_, ref mut sink) => sink.error(desc),
+        }
+    }
+
+    type Output = Sink::Output;
+
+    #[inline]
+    fn finish(self) -> Sink::Output {
+        let (mut decoder, mut sink) = match self.inner {
+            LossyDecoderInner::Utf8(utf8) => return utf8.finish(),
+            LossyDecoderInner::Other(decoder, sink) => (decoder, sink),
         };
 
         let mut out = Tendril::new();
@@ -208,21 +223,13 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Decoder<Sink, A>
         if out.len() > 0 {
             sink.process(out);
         }
-        sink.finish();
-    }
-
-    #[inline]
-    fn error(&mut self, desc: Cow<'static, str>) {
-        match self.inner {
-            DecoderInner::Utf8(ref mut utf8) => utf8.error(desc),
-            DecoderInner::Other(_, ref mut sink) => sink.error(desc),
-        }
+        sink.finish()
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::{TendrilSink, Decoder, Utf8LossyDecoder};
+    use super::{TendrilSink, LossyDecoder, Utf8LossyDecoder};
     use tendril::{Tendril, Atomicity, SliceExt, NonAtomic};
     use fmt;
     use std::borrow::Cow;
@@ -257,16 +264,18 @@ mod test {
         fn error(&mut self, desc: Cow<'static, str>) {
             self.errors.push(desc.into_owned());
         }
+
+        type Output = (Vec<Tendril<fmt::UTF8, A>>, Vec<String>);
+
+        fn finish(self) -> Self::Output {
+            (self.tendrils, self.errors)
+        }
     }
 
     fn check_validate(input: &[&[u8]], expected: &[&str], errs: usize) {
-        let mut validator = Utf8LossyDecoder::new(Accumulate::<NonAtomic>::new());
-        for x in input {
-            validator.process(x.to_tendril());
-        }
-        validator.finish();
-
-        let Accumulate { tendrils, errors } = validator.into_sink();
+        let validator = Utf8LossyDecoder::new(Accumulate::<NonAtomic>::new());
+        let input = input.iter().map(|x| x.to_tendril());
+        let (tendrils, errors) = validator.from_iter(input);
         assert_eq!(expected, &*tendrils.iter().map(|t| &**t).collect::<Vec<_>>());
         assert_eq!(errs, errors.len());
     }
@@ -303,13 +312,11 @@ mod test {
     }
 
     fn check_decode(enc: EncodingRef, input: &[&[u8]], expected: &str, errs: usize) {
-        let mut decoder = Decoder::new(enc, Accumulate::new());
+        let mut decoder = LossyDecoder::new(enc, Accumulate::new());
         for x in input {
             decoder.process(x.to_tendril());
         }
-        decoder.finish();
-
-        let Accumulate { tendrils, errors } = decoder.into_sink();
+        let (tendrils, errors) = decoder.finish();
         let mut tendril: Tendril<fmt::UTF8> = Tendril::new();
         for t in tendrils {
             tendril.push_tendril(&t);
