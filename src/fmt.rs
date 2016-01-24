@@ -157,7 +157,7 @@ pub unsafe trait SubsetOf<Super>: Format
 /// Indicates a format which corresponds to a Rust slice type,
 /// representing exactly the same invariants.
 pub unsafe trait SliceFormat: Format + Sized {
-    type Slice: ?Sized + Slice<Format = Self>;
+    type Slice: ?Sized + Slice;
 }
 
 /// Indicates a format which contains characters from Unicode
@@ -181,8 +181,6 @@ pub unsafe trait CharFormat<'a>: Format {
 
 /// Indicates a Rust slice type that has a corresponding format.
 pub unsafe trait Slice {
-    type Format: SliceFormat<Slice = Self>;
-
     /// Access the raw bytes of the slice.
     fn as_bytes(&self) -> &[u8];
 
@@ -217,8 +215,6 @@ unsafe impl SliceFormat for Bytes {
 }
 
 unsafe impl Slice for [u8] {
-    type Format = Bytes;
-
     #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
         self
@@ -329,8 +325,6 @@ unsafe impl SliceFormat for UTF8 {
 }
 
 unsafe impl Slice for str {
-    type Format = UTF8;
-
     #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
         str::as_bytes(self)

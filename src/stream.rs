@@ -10,6 +10,7 @@ use tendril::{Tendril, Atomicity};
 use fmt;
 
 use std::borrow::Cow;
+use std::io;
 use std::marker::PhantomData;
 
 use encoding::{EncodingRef, RawDecoder};
@@ -53,6 +54,35 @@ pub trait TendrilSink<F, A>
         }
         self.finish()
     }
+
+    /// Read from the given stream of bytes until exhaustion and process incrementally,
+    /// then finish. Return `Err` at the first I/O error.
+    fn read_from<R>(mut self, r: &mut R) -> io::Result<Self::Output>
+    where Self: Sized, R: io::Read, F: fmt::SliceFormat<Slice=[u8]> {
+        const BUFFER_SIZE: u32 = 4 * 1024;
+        loop {
+            let mut tendril = Tendril::<F, A>::new();
+            // FIXME: this exposes uninitialized bytes to a generic R type
+            // this is fine for R=File which never reads these bytes,
+            // but user-defined types might.
+            // The standard library pushes zeros to `Vec<u8>` for that reason.
+            unsafe {
+                tendril.push_uninitialized(BUFFER_SIZE);
+            }
+            loop {
+                match r.read(&mut tendril) {
+                    Ok(0) => return Ok(self.finish()),
+                    Ok(n) => {
+                        tendril.pop_back(BUFFER_SIZE - n as u32);
+                        self.process(tendril);
+                        break
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
+                    Err(e) => return Err(e)
+                }
+            }
+        }
+    }
 }
 
 /// A `TendrilSink` adaptor that takes bytes, decodes them as UTF-8,
@@ -74,7 +104,7 @@ impl<Sink, A> Utf8LossyDecoder<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity,
 {
-    /// Create a new incremental validator.
+    /// Create a new incremental UTF-8 decoder.
     #[inline]
     pub fn new(sink: Sink) -> Self {
         Utf8LossyDecoder {
@@ -272,43 +302,43 @@ mod test {
         }
     }
 
-    fn check_validate(input: &[&[u8]], expected: &[&str], errs: usize) {
-        let validator = Utf8LossyDecoder::new(Accumulate::<NonAtomic>::new());
+    fn check_utf8(input: &[&[u8]], expected: &[&str], errs: usize) {
+        let decoder = Utf8LossyDecoder::new(Accumulate::<NonAtomic>::new());
         let input = input.iter().map(|x| x.to_tendril());
-        let (tendrils, errors) = validator.from_iter(input);
+        let (tendrils, errors) = decoder.from_iter(input);
         assert_eq!(expected, &*tendrils.iter().map(|t| &**t).collect::<Vec<_>>());
         assert_eq!(errs, errors.len());
     }
 
     #[test]
-    fn validate_utf8() {
-        check_validate(&[], &[], 0);
-        check_validate(&[b""], &[], 0);
-        check_validate(&[b"xyz"], &["xyz"], 0);
-        check_validate(&[b"x", b"y", b"z"], &["x", "y", "z"], 0);
+    fn utf8() {
+        check_utf8(&[], &[], 0);
+        check_utf8(&[b""], &[], 0);
+        check_utf8(&[b"xyz"], &["xyz"], 0);
+        check_utf8(&[b"x", b"y", b"z"], &["x", "y", "z"], 0);
 
-        check_validate(&[b"xy\xEA\x99\xAEzw"], &["xy\u{a66e}zw"], 0);
-        check_validate(&[b"xy\xEA", b"\x99\xAEzw"], &["xy", "\u{a66e}", "zw"], 0);
-        check_validate(&[b"xy\xEA\x99", b"\xAEzw"], &["xy", "\u{a66e}", "zw"], 0);
-        check_validate(&[b"xy\xEA", b"\x99", b"\xAEzw"], &["xy", "\u{a66e}", "zw"], 0);
-        check_validate(&[b"\xEA", b"", b"\x99", b"", b"\xAE"], &["\u{a66e}"], 0);
-        check_validate(&[b"", b"\xEA", b"", b"\x99", b"", b"\xAE", b""], &["\u{a66e}"], 0);
+        check_utf8(&[b"xy\xEA\x99\xAEzw"], &["xy\u{a66e}zw"], 0);
+        check_utf8(&[b"xy\xEA", b"\x99\xAEzw"], &["xy", "\u{a66e}", "zw"], 0);
+        check_utf8(&[b"xy\xEA\x99", b"\xAEzw"], &["xy", "\u{a66e}", "zw"], 0);
+        check_utf8(&[b"xy\xEA", b"\x99", b"\xAEzw"], &["xy", "\u{a66e}", "zw"], 0);
+        check_utf8(&[b"\xEA", b"", b"\x99", b"", b"\xAE"], &["\u{a66e}"], 0);
+        check_utf8(&[b"", b"\xEA", b"", b"\x99", b"", b"\xAE", b""], &["\u{a66e}"], 0);
 
-        check_validate(&[b"xy\xEA", b"\xFF", b"\x99\xAEz"],
+        check_utf8(&[b"xy\xEA", b"\xFF", b"\x99\xAEz"],
             &["xy", "\u{fffd}", "\u{fffd}", "\u{fffd}", "\u{fffd}", "z"], 4);
-        check_validate(&[b"xy\xEA\x99", b"\xFFz"],
+        check_utf8(&[b"xy\xEA\x99", b"\xFFz"],
             &["xy", "\u{fffd}", "\u{fffd}", "z"], 2);
 
-        check_validate(&[b"\xC5\x91\xC5\x91\xC5\x91"], &["őőő"], 0);
-        check_validate(&[b"\xC5\x91", b"\xC5\x91", b"\xC5\x91"], &["ő", "ő", "ő"], 0);
-        check_validate(&[b"\xC5", b"\x91\xC5", b"\x91\xC5", b"\x91"],
+        check_utf8(&[b"\xC5\x91\xC5\x91\xC5\x91"], &["őőő"], 0);
+        check_utf8(&[b"\xC5\x91", b"\xC5\x91", b"\xC5\x91"], &["ő", "ő", "ő"], 0);
+        check_utf8(&[b"\xC5", b"\x91\xC5", b"\x91\xC5", b"\x91"],
             &["ő", "ő", "ő"], 0);
-        check_validate(&[b"\xC5", b"\x91\xff", b"\x91\xC5", b"\x91"],
+        check_utf8(&[b"\xC5", b"\x91\xff", b"\x91\xC5", b"\x91"],
             &["ő", "\u{fffd}", "\u{fffd}", "ő"], 2);
 
         // incomplete char at end of input
-        check_validate(&[b"\xC0"], &["\u{fffd}"], 1);
-        check_validate(&[b"\xEA\x99"], &["\u{fffd}"], 1);
+        check_utf8(&[b"\xC0"], &["\u{fffd}"], 1);
+        check_utf8(&[b"\xEA\x99"], &["\u{fffd}"], 1);
     }
 
     fn check_decode(enc: EncodingRef, input: &[&[u8]], expected: &str, errs: usize) {
@@ -385,5 +415,15 @@ mod test {
 
         check_decode(enc::WINDOWS_949, &[b"\xbe", b"", b"\xc8\xb3"], "안\u{fffd}", 1);
         check_decode(enc::WINDOWS_949, &[b"\xbe\x28\xb3\xe7"], "\u{fffd}(녕", 1);
+    }
+
+    #[test]
+    fn read_from() {
+        let decoder = Utf8LossyDecoder::new(Accumulate::<NonAtomic>::new());
+        let mut bytes: &[u8] = b"foo\xffbar";
+        let (tendrils, errors) = decoder.read_from(&mut bytes).unwrap();
+        assert_eq!(&*tendrils.iter().map(|t| &**t).collect::<Vec<_>>(),
+                   &["foo", "\u{FFFD}", "bar"]);
+        assert_eq!(errors, &["invalid byte sequence"]);
     }
 }
