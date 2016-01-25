@@ -189,12 +189,23 @@ impl<Sink, A> LossyDecoder<Sink, A>
     /// Create a new incremental decoder.
     #[inline]
     pub fn new(encoding: EncodingRef, sink: Sink) -> LossyDecoder<Sink, A> {
-        LossyDecoder {
-            inner: if encoding.name() == "utf-8" {
-                LossyDecoderInner::Utf8(Utf8LossyDecoder::new(sink))
-            } else {
-                LossyDecoderInner::Other(encoding.raw_decoder(), sink)
+        if encoding.name() == "utf-8" {
+            LossyDecoder::utf8(sink)
+        } else {
+            LossyDecoder {
+                inner:  LossyDecoderInner::Other(encoding.raw_decoder(), sink)
             }
+        }
+    }
+
+    /// Create a new incremental decoder for the UTF-8 encoding.
+    ///
+    /// This is useful for content that is known at run-time to be UTF-8
+    /// (whereas `Utf8LossyDecoder` requires knowning at compile-time.)
+    #[inline]
+    pub fn utf8(sink: Sink) -> LossyDecoder<Sink, A> {
+        LossyDecoder {
+            inner: LossyDecoderInner::Utf8(Utf8LossyDecoder::new(sink))
         }
     }
 }
