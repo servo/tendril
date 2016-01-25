@@ -157,7 +157,7 @@ pub unsafe trait SubsetOf<Super>: Format
 /// Indicates a format which corresponds to a Rust slice type,
 /// representing exactly the same invariants.
 pub unsafe trait SliceFormat: Format + Sized {
-    type Slice: ?Sized + Slice<Format = Self>;
+    type Slice: ?Sized + Slice;
 }
 
 /// Indicates a format which contains characters from Unicode
@@ -179,10 +179,8 @@ pub unsafe trait CharFormat<'a>: Format {
         where F: FnOnce(&[u8]);
 }
 
-/// Indicates a Rust slice type that has a corresponding format.
+/// Indicates a Rust slice type that is represented in memory as bytes.
 pub unsafe trait Slice {
-    type Format: SliceFormat<Slice = Self>;
-
     /// Access the raw bytes of the slice.
     fn as_bytes(&self) -> &[u8];
 
@@ -191,6 +189,12 @@ pub unsafe trait Slice {
     /// You may assume the buffer is *already validated*
     /// for `Format`.
     unsafe fn from_bytes(x: &[u8]) -> &Self;
+
+    /// Convert a byte slice to this kind of slice.
+    ///
+    /// You may assume the buffer is *already validated*
+    /// for `Format`.
+    unsafe fn from_mut_bytes(x: &mut [u8]) -> &mut Self;
 }
 
 /// Marker type for uninterpreted bytes.
@@ -211,8 +215,6 @@ unsafe impl SliceFormat for Bytes {
 }
 
 unsafe impl Slice for [u8] {
-    type Format = Bytes;
-
     #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
         self
@@ -220,6 +222,11 @@ unsafe impl Slice for [u8] {
 
     #[inline(always)]
     unsafe fn from_bytes(x: &[u8]) -> &[u8] {
+        x
+    }
+
+    #[inline(always)]
+    unsafe fn from_mut_bytes(x: &mut [u8]) -> &mut [u8] {
         x
     }
 }
@@ -318,8 +325,6 @@ unsafe impl SliceFormat for UTF8 {
 }
 
 unsafe impl Slice for str {
-    type Format = UTF8;
-
     #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
         str::as_bytes(self)
@@ -328,6 +333,11 @@ unsafe impl Slice for str {
     #[inline(always)]
     unsafe fn from_bytes(x: &[u8]) -> &str {
         str::from_utf8_unchecked(x)
+    }
+
+    #[inline(always)]
+    unsafe fn from_mut_bytes(x: &mut [u8]) -> &mut str {
+        mem::transmute(x)
     }
 }
 

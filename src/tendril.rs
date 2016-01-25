@@ -399,6 +399,18 @@ impl<F, A> Deref for Tendril<F, A>
     }
 }
 
+impl<F, A> DerefMut for Tendril<F, A>
+    where F: fmt::SliceFormat,
+          A: Atomicity,
+{
+    #[inline]
+    fn deref_mut(&mut self) -> &mut F::Slice {
+        unsafe {
+            F::Slice::from_mut_bytes(self.as_mut_byte_slice())
+        }
+    }
+}
+
 impl<F, A> Borrow<[u8]> for Tendril<F, A>
     where F: fmt::SliceFormat,
           A: Atomicity,
@@ -1064,15 +1076,11 @@ impl<F, A> Tendril<F, A>
             }
         }
     }
-}
 
-// There's no need to worry about locking on an atomic Tendril, because it makes it unique as
-// soon as you do that.
-impl<A> DerefMut for Tendril<fmt::Bytes, A>
-    where A: Atomicity,
-{
+    // There's no need to worry about locking on an atomic Tendril, because it makes it unique as
+    // soon as you do that.
     #[inline]
-    fn deref_mut<'a>(&'a mut self) -> &'a mut [u8] {
+    fn as_mut_byte_slice<'a>(&'a mut self) -> &'a mut [u8] {
         unsafe {
             match *self.ptr.get() {
                 EMPTY_TAG => &mut [],
@@ -1089,7 +1097,6 @@ impl<A> DerefMut for Tendril<fmt::Bytes, A>
         }
     }
 }
-
 
 impl<F, A> Tendril<F, A>
     where F: fmt::SliceFormat,
@@ -1155,10 +1162,10 @@ impl<F, A> From<SendTendril<F>> for Tendril<F, A>
 }
 
 /// `Tendril`-related methods for Rust slices.
-pub trait SliceExt: fmt::Slice {
+pub trait SliceExt<F>: fmt::Slice where F: fmt::SliceFormat<Slice=Self> {
     /// Make a `Tendril` from this slice.
     #[inline]
-    fn to_tendril(&self) -> Tendril<Self::Format> {
+    fn to_tendril(&self) -> Tendril<F> {
     // It should be done thusly, but at the time of writing the defaults don't help inference:
     //fn to_tendril<A = NonAtomic>(&self) -> Tendril<Self::Format, A>
     //    where A: Atomicity,
@@ -1167,8 +1174,8 @@ pub trait SliceExt: fmt::Slice {
     }
 }
 
-impl SliceExt for str { }
-impl SliceExt for [u8] { }
+impl SliceExt<fmt::UTF8> for str { }
+impl SliceExt<fmt::Bytes> for [u8] { }
 
 impl<F, A> Tendril<F, A>
     where F: for<'a> fmt::CharFormat<'a>,
@@ -1278,6 +1285,10 @@ impl<T> ReadExt for T
                 if new_write_size < DEFAULT_BUF_SIZE {
                     new_write_size *= 2;
                 }
+                // FIXME: this exposes uninitialized bytes to a generic R type
+                // this is fine for R=File which never reads these bytes,
+                // but user-defined types might.
+                // The standard library pushes zeros to `Vec<u8>` for that reason.
                 unsafe {
                     buf.push_uninitialized(new_write_size);
                 }
@@ -1343,8 +1354,9 @@ impl<A> encoding::ByteWriter for Tendril<fmt::Bytes, A>
     }
 }
 
-impl<A> Tendril<fmt::Bytes, A>
+impl<F, A> Tendril<F, A>
     where A: Atomicity,
+          F: fmt::SliceFormat<Slice=[u8]>
 {
     /// Decode from some character encoding into UTF-8.
     ///

@@ -11,7 +11,7 @@
 #[cfg(feature = "unstable")] extern crate core;
 #[macro_use] extern crate mac;
 extern crate futf;
-extern crate encoding;
+extern crate utf8;
 
 #[cfg(all(test, feature = "unstable"))]
 extern crate test;
@@ -19,9 +19,16 @@ extern crate test;
 pub use tendril::{Tendril, ByteTendril, StrTendril, SliceExt, ReadExt, SubtendrilError};
 pub use tendril::{SendTendril, Atomicity, Atomic, NonAtomic};
 pub use fmt::Format;
+pub use stream::TendrilSink;
 
 pub mod fmt;
 pub mod stream;
+
+/// Re-export the rust-encoding crate.
+pub mod encoding {
+    extern crate encoding;
+    pub use self::encoding::*;
+}
 
 mod util;
 mod buf32;
