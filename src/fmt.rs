@@ -179,7 +179,7 @@ pub unsafe trait CharFormat<'a>: Format {
         where F: FnOnce(&[u8]);
 }
 
-/// Indicates a Rust slice type that has a corresponding format.
+/// Indicates a Rust slice type that is represented in memory as bytes.
 pub unsafe trait Slice {
     /// Access the raw bytes of the slice.
     fn as_bytes(&self) -> &[u8];
