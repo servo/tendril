@@ -10,8 +10,10 @@ use tendril::{Tendril, Atomicity, NonAtomic};
 use fmt;
 
 use std::borrow::Cow;
+use std::fs::File;
 use std::io;
 use std::marker::PhantomData;
+use std::path::Path;
 
 use encoding::{EncodingRef, RawDecoder};
 use utf8;
@@ -82,6 +84,14 @@ pub trait TendrilSink<F, A=NonAtomic>
                 }
             }
         }
+    }
+
+
+    /// Read from the file at the given path and process incrementally,
+    /// then finish. Return `Err` at the first I/O error.
+    fn from_file<P>(self, path: P) -> io::Result<Self::Output>
+    where Self: Sized, P: AsRef<Path>, F: fmt::SliceFormat<Slice=[u8]> {
+        self.read_from(&mut try!(File::open(path)))
     }
 }
 
