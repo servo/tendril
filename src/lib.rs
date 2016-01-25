@@ -11,7 +11,6 @@
 #[cfg(feature = "unstable")] extern crate core;
 #[macro_use] extern crate mac;
 extern crate futf;
-extern crate encoding;
 extern crate utf8;
 
 #[cfg(all(test, feature = "unstable"))]
@@ -24,6 +23,12 @@ pub use stream::TendrilSink;
 
 pub mod fmt;
 pub mod stream;
+
+/// Re-export the rust-encoding crate.
+pub mod encoding {
+    extern crate encoding;
+    pub use self::encoding::*;
+}
 
 mod util;
 mod buf32;
