@@ -6,7 +6,7 @@
 
 //! Streams of tendrils.
 
-use tendril::{Tendril, Atomicity};
+use tendril::{Tendril, Atomicity, NonAtomic};
 use fmt;
 
 use std::borrow::Cow;
@@ -24,7 +24,7 @@ use utf8;
 /// architecture.
 ///
 /// [html5ever]: https://github.com/servo/html5ever
-pub trait TendrilSink<F, A>
+pub trait TendrilSink<F, A=NonAtomic>
     where F: fmt::Format,
           A: Atomicity,
 {
@@ -91,7 +91,7 @@ pub trait TendrilSink<F, A>
 ///
 /// This does not allocate memory: the output is either subtendrils on the input,
 /// on inline tendrils for a single code point.
-pub struct Utf8LossyDecoder<Sink, A>
+pub struct Utf8LossyDecoder<Sink, A=NonAtomic>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity
 {
@@ -169,7 +169,7 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
 /// and emits Unicode (`StrTendril`).
 ///
 /// This allocates new tendrils for encodings other than UTF-8.
-pub struct LossyDecoder<Sink, A>
+pub struct LossyDecoder<Sink, A=NonAtomic>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity {
     inner: LossyDecoderInner<Sink, A>,
