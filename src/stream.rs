@@ -41,16 +41,16 @@ pub trait TendrilSink<F, A=NonAtomic>
     fn finish(self) -> Self::Output;
 
     /// Process one tendril and finish.
-    fn one(mut self, t: Tendril<F, A>) -> Self::Output where Self: Sized {
-        self.process(t);
+    fn one<T>(mut self, t: T) -> Self::Output where Self: Sized, T: Into<Tendril<F, A>> {
+        self.process(t.into());
         self.finish()
     }
 
     /// Consume an iterator of tendrils, processing each item, then finish.
     fn from_iter<I>(mut self, i: I) -> Self::Output
-    where Self: Sized, I: IntoIterator<Item=Tendril<F, A>> {
+    where Self: Sized, I: IntoIterator, I::Item: Into<Tendril<F, A>> {
         for t in i {
-            self.process(t)
+            self.process(t.into())
         }
         self.finish()
     }
@@ -304,8 +304,7 @@ mod test {
 
     fn check_utf8(input: &[&[u8]], expected: &[&str], errs: usize) {
         let decoder = Utf8LossyDecoder::new(Accumulate::<NonAtomic>::new());
-        let input = input.iter().map(|x| x.to_tendril());
-        let (tendrils, errors) = decoder.from_iter(input);
+        let (tendrils, errors) = decoder.from_iter(input.iter().cloned());
         assert_eq!(expected, &*tendrils.iter().map(|t| &**t).collect::<Vec<_>>());
         assert_eq!(errs, errors.len());
     }
