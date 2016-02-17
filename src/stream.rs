@@ -106,7 +106,7 @@ pub struct Utf8LossyDecoder<Sink, A=NonAtomic>
           A: Atomicity
 {
     decoder: utf8::Decoder,
-    sink: Sink,
+    pub inner_sink: Sink,
     marker: PhantomData<A>,
 }
 
@@ -116,10 +116,10 @@ impl<Sink, A> Utf8LossyDecoder<Sink, A>
 {
     /// Create a new incremental UTF-8 decoder.
     #[inline]
-    pub fn new(sink: Sink) -> Self {
+    pub fn new(inner_sink: Sink) -> Self {
         Utf8LossyDecoder {
             decoder: utf8::Decoder::new(),
-            sink: sink,
+            inner_sink: inner_sink,
             marker: PhantomData,
         }
     }
@@ -135,7 +135,7 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
         loop {
             let (ch, s, result) = self.decoder.decode(input);
             if !ch.is_empty() {
-                self.sink.process(Tendril::from_slice(&*ch));
+                self.inner_sink.process(Tendril::from_slice(&*ch));
             }
             if !s.is_empty() {
                 // rust-utf8 promises that `s` is a subslice of `&*t`
@@ -143,14 +143,14 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
                 let offset = s.as_ptr() as usize - t.as_ptr() as usize;
                 let subtendril = t.subtendril(offset as u32, s.len() as u32);
                 unsafe {
-                    self.sink.process(subtendril.reinterpret_without_validating());
+                    self.inner_sink.process(subtendril.reinterpret_without_validating());
                 }
             }
             match result {
                 utf8::Result::Ok | utf8::Result::Incomplete => break,
                 utf8::Result::Error { remaining_input_after_error: remaining } => {
-                    self.sink.error("invalid byte sequence".into());
-                    self.sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
+                    self.inner_sink.error("invalid byte sequence".into());
+                    self.inner_sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
                     input = remaining;
                 }
             }
@@ -159,7 +159,7 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
 
     #[inline]
     fn error(&mut self, desc: Cow<'static, str>) {
-        self.sink.error(desc);
+        self.inner_sink.error(desc);
     }
 
     type Output = Sink::Output;
@@ -167,10 +167,10 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
     #[inline]
     fn finish(mut self) -> Sink::Output {
         if self.decoder.has_incomplete_sequence() {
-            self.sink.error("incomplete byte sequence at end of stream".into());
-            self.sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
+            self.inner_sink.error("incomplete byte sequence at end of stream".into());
+            self.inner_sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
         }
-        self.sink.finish()
+        self.inner_sink.finish()
     }
 }
 
@@ -216,6 +216,22 @@ impl<Sink, A> LossyDecoder<Sink, A>
     pub fn utf8(sink: Sink) -> LossyDecoder<Sink, A> {
         LossyDecoder {
             inner: LossyDecoderInner::Utf8(Utf8LossyDecoder::new(sink))
+        }
+    }
+
+    /// Give a reference to the inner sink.
+    pub fn inner_sink(&self) -> &Sink {
+        match self.inner {
+            LossyDecoderInner::Utf8(ref utf8) => &utf8.inner_sink,
+            LossyDecoderInner::Other(_, ref inner_sink) => inner_sink,
+        }
+    }
+
+    /// Give a mutable reference to the inner sink.
+    pub fn inner_sink_mut(&mut self) -> &mut Sink {
+        match self.inner {
+            LossyDecoderInner::Utf8(ref mut utf8) => &mut utf8.inner_sink,
+            LossyDecoderInner::Other(_, ref mut inner_sink) => inner_sink,
         }
     }
 }
