@@ -1,6 +1,6 @@
 [package]
 name = "tendril"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Keegan McAllister <mcallister.keegan@gmail.com>",
 		   "Simon Sapin <simon.sapin@exyr.org>",
 		   "Chris Morgan <me@chrismorgan.info>"]
