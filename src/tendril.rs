@@ -2117,10 +2117,10 @@ mod test {
         let mut t = b"Hello".to_tendril();
         t.extend(None::<&[u8]>.into_iter());
         assert_eq!(b"Hello", &*t);
-        t.extend([b", " as &[u8], b"world" as &[u8], b"!" as &[u8]].iter().map(|&s| s));
+        t.extend([b", ".as_ref(), b"world".as_ref(), b"!".as_ref()].iter().map(|&s| s));
         assert_eq!(b"Hello, world!", &*t);
-        assert_eq!(b"Hello, world!", &*[b"Hello" as &[u8], b", " as &[u8],
-                                        b"world" as &[u8], b"!" as &[u8]]
+        assert_eq!(b"Hello, world!", &*[b"Hello".as_ref(), b", ".as_ref(),
+                                        b"world".as_ref(), b"!".as_ref()]
                                     .iter().map(|&s| s).collect::<ByteTendril>());
 
         let string = "the quick brown fox jumps over the lazy dog";
@@ -2186,13 +2186,13 @@ mod test {
         // https://github.com/rust-lang/rust/issues/27108.
         let mut map = HashMap::new();
         map.insert("foo".to_tendril(), 1);
-        assert_eq!(map.get(b"foo" as &[u8]), Some(&1));
-        assert_eq!(map.get(b"bar" as &[u8]), None);
+        assert_eq!(map.get(b"foo".as_ref()), Some(&1));
+        assert_eq!(map.get(b"bar".as_ref()), None);
 
         let mut map = HashMap::new();
         map.insert(b"foo".to_tendril(), 1);
-        assert_eq!(map.get(b"foo" as &[u8]), Some(&1));
-        assert_eq!(map.get(b"bar" as &[u8]), None);
+        assert_eq!(map.get(b"foo".as_ref()), Some(&1));
+        assert_eq!(map.get(b"bar".as_ref()), None);
     }
 
     #[test]

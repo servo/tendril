@@ -16,7 +16,7 @@ fn index_words_string(input: &String) -> HashMap<char, Vec<String>> {
             continue;
         }
         let word = word.to_owned();
-        match index.entry(word.char_at(0)) {
+        match index.entry(word.chars().next().unwrap()) {
             Entry::Occupied(mut e) => {
                 let x: &mut Vec<String> = e.get_mut();
                 x.push(word);
@@ -34,7 +34,7 @@ fn index_words_tendril(input: &StrTendril) -> HashMap<char, Vec<StrTendril>> {
         match t.pop_front_char_run(|c| c != ' ') {
             None => return index,
             Some((_, false)) => (),
-            Some((word, true)) => match index.entry(word.char_at(0)) {
+            Some((word, true)) => match index.entry(word.chars().next().unwrap()) {
                 Entry::Occupied(mut e) => { e.get_mut().push(word); }
                 Entry::Vacant(e) => { e.insert(vec![word]); }
             }

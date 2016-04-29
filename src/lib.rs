@@ -5,7 +5,7 @@
 // except according to those terms.
 
 #![cfg_attr(feature = "unstable", feature(nonzero, unsafe_no_drop_flag, filling_drop))]
-#![cfg_attr(all(test, feature = "unstable"), feature(test, str_char))]
+#![cfg_attr(all(test, feature = "unstable"), feature(test))]
 #![cfg_attr(test, deny(warnings))]
 
 #[cfg(feature = "unstable")] extern crate core;
