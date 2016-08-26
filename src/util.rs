@@ -57,9 +57,3 @@ impl<T> ::std::ops::Deref for NonZero<T> {
     #[inline]
     fn deref(&self) -> &T { &self.0 }
 }
-
-#[cfg(not(feature = "unstable"))]
-pub fn is_post_drop(_: usize) -> bool { false }
-
-#[cfg(feature = "unstable")]
-pub fn is_post_drop(x: usize) -> bool { x == mem::POST_DROP_USIZE }

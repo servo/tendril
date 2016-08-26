@@ -23,7 +23,7 @@ use buf32::{self, Buf32};
 use fmt::{self, Slice};
 use fmt::imp::Fixup;
 use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut, copy_lifetime,
-           NonZero, is_post_drop};
+           NonZero};
 use OFLOW;
 
 const MAX_INLINE_LEN: usize = 8;
@@ -185,7 +185,6 @@ pub enum SubtendrilError {
 ///
 /// The maximum length of a `Tendril` is 4 GB. The library will panic if
 /// you attempt to go over the limit.
-#[cfg_attr(feature = "unstable", unsafe_no_drop_flag)]
 #[repr(packed)]
 pub struct Tendril<F, A = NonAtomic>
     where F: fmt::Format,
@@ -232,7 +231,7 @@ impl<F, A> Drop for Tendril<F, A>
     fn drop(&mut self) {
         unsafe {
             let p = *self.ptr.get();
-            if p <= MAX_INLINE_TAG || is_post_drop(p) {
+            if p <= MAX_INLINE_TAG {
                 return;
             }
 
@@ -1572,8 +1571,14 @@ mod test {
     #[test]
     fn assert_sizes() {
         use std::mem;
-        let drop_flag = if cfg!(feature = "unstable") { 0 } else { 1 };
-        let correct = mem::size_of::<*const ()>() + 8 + drop_flag;
+        struct EmptyWithDrop;
+        impl Drop for EmptyWithDrop {
+            fn drop(&mut self) {}
+        }
+        let compiler_uses_inline_drop_flags = mem::size_of::<EmptyWithDrop>() > 0;
+
+        let correct = mem::size_of::<*const ()>() + 8 +
+                      if compiler_uses_inline_drop_flags { 1 } else { 0 };
 
         assert_eq!(correct, mem::size_of::<ByteTendril>());
         assert_eq!(correct, mem::size_of::<StrTendril>());
