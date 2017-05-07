@@ -20,6 +20,7 @@ pub use tendril::{Tendril, ByteTendril, StrTendril, SliceExt, ReadExt, Subtendri
 pub use tendril::{SendTendril, Atomicity, Atomic, NonAtomic};
 pub use fmt::Format;
 pub use stream::TendrilSink;
+pub use utf8_decode::{Utf8DecodeError, IncompleteUtf8};
 
 pub mod fmt;
 pub mod stream;
@@ -33,5 +34,6 @@ pub mod encoding {
 mod util;
 mod buf32;
 mod tendril;
+mod utf8_decode;
 
 static OFLOW: &'static str = "tendril: overflow in buffer arithmetic";
