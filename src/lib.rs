@@ -20,7 +20,7 @@ pub use tendril::{Tendril, ByteTendril, StrTendril, SliceExt, ReadExt, Subtendri
 pub use tendril::{SendTendril, Atomicity, Atomic, NonAtomic};
 pub use fmt::Format;
 pub use stream::TendrilSink;
-pub use utf8_decode::{Utf8DecodeError, IncompleteUtf8};
+pub use utf8_decode::IncompleteUtf8;
 
 pub mod fmt;
 pub mod stream;
