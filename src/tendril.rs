@@ -213,7 +213,7 @@ impl<F, A> Clone for Tendril<F, A>
     #[inline]
     fn clone(&self) -> Tendril<F, A> {
         unsafe {
-            if *self.ptr.get() > MAX_INLINE_TAG {
+            if self.ptr.get().get() > MAX_INLINE_TAG {
                 self.make_buf_shared();
                 self.incref();
             }
@@ -230,7 +230,7 @@ impl<F, A> Drop for Tendril<F, A>
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            let p = *self.ptr.get();
+            let p = self.ptr.get().get();
             if p <= MAX_INLINE_TAG {
                 return;
             }
@@ -482,7 +482,7 @@ impl<F, A> strfmt::Debug for Tendril<F, A>
 {
     #[inline]
     fn fmt(&self, f: &mut strfmt::Formatter) -> strfmt::Result {
-        let kind = match *self.ptr.get() {
+        let kind = match self.ptr.get().get() {
             p if p <= MAX_INLINE_TAG => "inline",
             p if p & 1 == 1 => "shared",
             _ => "owned",
@@ -558,7 +558,7 @@ impl<F, A> Tendril<F, A>
     /// slice, if any.
     #[inline(always)]
     pub fn len32(&self) -> u32 {
-        match *self.ptr.get() {
+        match self.ptr.get().get() {
             EMPTY_TAG => 0,
             n if n <= MAX_INLINE_LEN => n as u32,
             _ => self.len,
@@ -568,7 +568,7 @@ impl<F, A> Tendril<F, A>
     /// Is the backing buffer shared?
     #[inline]
     pub fn is_shared(&self) -> bool {
-        let n = *self.ptr.get();
+        let n = self.ptr.get().get();
 
         (n > MAX_INLINE_TAG) && ((n & 1) == 1)
     }
@@ -576,15 +576,15 @@ impl<F, A> Tendril<F, A>
     /// Is the backing buffer shared with this other `Tendril`?
     #[inline]
     pub fn is_shared_with(&self, other: &Tendril<F, A>) -> bool {
-        let n = *self.ptr.get();
+        let n = self.ptr.get().get();
 
-        (n > MAX_INLINE_TAG) && (n == *other.ptr.get())
+        (n > MAX_INLINE_TAG) && (n == other.ptr.get().get())
     }
 
     /// Truncate to length 0 without discarding any owned storage.
     #[inline]
     pub fn clear(&mut self) {
-        if *self.ptr.get() <= MAX_INLINE_TAG {
+        if self.ptr.get().get() <= MAX_INLINE_TAG {
             self.ptr.set(unsafe { NonZero::new(EMPTY_TAG) });
         } else {
             let (_, shared, _) = unsafe { self.assume_buf() };
@@ -719,7 +719,7 @@ impl<F, A> Tendril<F, A>
         let new_len = self.len32().checked_add(other.len32()).expect(OFLOW);
 
         unsafe {
-            if (*self.ptr.get() > MAX_INLINE_TAG) && (*other.ptr.get() > MAX_INLINE_TAG) {
+            if (self.ptr.get().get() > MAX_INLINE_TAG) && (other.ptr.get().get() > MAX_INLINE_TAG) {
                 let (self_buf, self_shared, _) = self.assume_buf();
                 let (other_buf, other_shared, _) = other.assume_buf();
 
@@ -960,7 +960,7 @@ impl<F, A> Tendril<F, A>
 
     #[inline]
     unsafe fn make_buf_shared(&self) {
-        let p = *self.ptr.get();
+        let p = self.ptr.get().get();
         if p & 1 == 0 {
             let header = p as *mut Header<A>;
             (*header).cap = self.aux.get();
@@ -976,7 +976,7 @@ impl<F, A> Tendril<F, A>
     #[inline]
     fn make_owned(&mut self) {
         unsafe {
-            let ptr = *self.ptr.get();
+            let ptr = self.ptr.get().get();
             if ptr <= MAX_INLINE_TAG || (ptr & 1) == 1 {
                 *self = Tendril::owned_copy(self.as_byte_slice());
             }
@@ -994,14 +994,14 @@ impl<F, A> Tendril<F, A>
 
     #[inline(always)]
     unsafe fn header(&self) -> *mut Header<A> {
-        (*self.ptr.get() & !1) as *mut Header<A>
+        (self.ptr.get().get() & !1) as *mut Header<A>
     }
 
     #[inline]
     unsafe fn assume_buf(&self) -> (Buf32<Header<A>>, bool, u32) {
-        let ptr = self.ptr.get();
+        let ptr = self.ptr.get().get();
         let header = self.header();
-        let shared = (*ptr & 1) == 1;
+        let shared = (ptr & 1) == 1;
         let (cap, offset) = match shared {
             true => ((*header).cap, self.aux.get()),
             false => (self.aux.get(), 0),
@@ -1062,7 +1062,7 @@ impl<F, A> Tendril<F, A>
     #[inline]
     fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
         unsafe {
-            match *self.ptr.get() {
+            match self.ptr.get().get() {
                 EMPTY_TAG => &[],
                 n if n <= MAX_INLINE_LEN => {
                     slice::from_raw_parts(&self.len as *const u32 as *const u8, n)
@@ -1081,7 +1081,7 @@ impl<F, A> Tendril<F, A>
     #[inline]
     fn as_mut_byte_slice<'a>(&'a mut self) -> &'a mut [u8] {
         unsafe {
-            match *self.ptr.get() {
+            match self.ptr.get().get() {
                 EMPTY_TAG => &mut [],
                 n if n <= MAX_INLINE_LEN => {
                     slice::from_raw_parts_mut(&mut self.len as *mut u32 as *mut u8, n)
@@ -1378,7 +1378,7 @@ impl<F, A> Tendril<F, A>
     pub unsafe fn push_uninitialized(&mut self, n: u32) {
         let new_len = self.len32().checked_add(n).expect(OFLOW);
         if new_len <= MAX_INLINE_LEN as u32
-            && *self.ptr.get() <= MAX_INLINE_TAG
+            && self.ptr.get().get() <= MAX_INLINE_TAG
         {
             self.ptr.set(inline_tag(new_len))
         } else {

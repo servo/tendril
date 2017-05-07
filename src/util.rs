@@ -52,8 +52,7 @@ impl<T> NonZero<T> {
 }
 
 #[cfg(not(feature = "unstable"))]
-impl<T> ::std::ops::Deref for NonZero<T> {
-    type Target = T;
+impl<T> NonZero<T> {
     #[inline]
-    fn deref(&self) -> &T { &self.0 }
+    pub fn get(self) -> T { self.0 }
 }

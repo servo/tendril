@@ -1,9 +1,9 @@
 [package]
 name = "tendril"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Keegan McAllister <mcallister.keegan@gmail.com>",
-		   "Simon Sapin <simon.sapin@exyr.org>",
-		   "Chris Morgan <me@chrismorgan.info>"]
+           "Simon Sapin <simon.sapin@exyr.org>",
+           "Chris Morgan <me@chrismorgan.info>"]
 repository = "https://github.com/servo/tendril"
 readme = "README.md"
 license = "MIT/Apache-2.0"
