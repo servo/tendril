@@ -105,8 +105,8 @@ pub struct Utf8LossyDecoder<Sink, A=NonAtomic>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity
 {
-    decoder: utf8::Decoder,
     pub inner_sink: Sink,
+    incomplete: Option<utf8::Incomplete>,
     marker: PhantomData<A>,
 }
 
@@ -118,8 +118,8 @@ impl<Sink, A> Utf8LossyDecoder<Sink, A>
     #[inline]
     pub fn new(inner_sink: Sink) -> Self {
         Utf8LossyDecoder {
-            decoder: utf8::Decoder::new(),
             inner_sink: inner_sink,
+            incomplete: None,
             marker: PhantomData,
         }
     }
@@ -130,28 +130,74 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
           A: Atomicity,
 {
     #[inline]
-    fn process(&mut self, t: Tendril<fmt::Bytes, A>) {
-        let mut input = &*t;
-        loop {
-            let (ch, s, result) = self.decoder.decode(input);
-            if !ch.is_empty() {
-                self.inner_sink.process(Tendril::from_slice(&*ch));
-            }
-            if !s.is_empty() {
-                // rust-utf8 promises that `s` is a subslice of `&*t`
-                // so this substraction won’t underflow and `subtendril()` won’t panic.
-                let offset = s.as_ptr() as usize - t.as_ptr() as usize;
-                let subtendril = t.subtendril(offset as u32, s.len() as u32);
-                unsafe {
-                    self.inner_sink.process(subtendril.reinterpret_without_validating());
+    fn process(&mut self, mut t: Tendril<fmt::Bytes, A>) {
+        // FIXME: remove take() and map() when non-lexical borrows are stable.
+        if let Some(mut incomplete) = self.incomplete.take() {
+            let resume_at = incomplete.try_complete(&t).map(|(result, rest)| {
+                match result {
+                    Ok(s) => {
+                        self.inner_sink.process(Tendril::from_slice(s))
+                    }
+                    Err(_) => {
+                        self.inner_sink.error("invalid byte sequence".into());
+                        self.inner_sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
+                    }
+                }
+                t.len() - rest.len()
+            });
+            match resume_at {
+                None => {
+                    self.incomplete = Some(incomplete);
+                    return
+                }
+                Some(resume_at) => {
+                    t.pop_front(resume_at as u32)
                 }
             }
-            match result {
-                utf8::Result::Ok | utf8::Result::Incomplete => break,
-                utf8::Result::Error { remaining_input_after_error: remaining } => {
-                    self.inner_sink.error("invalid byte sequence".into());
-                    self.inner_sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
-                    input = remaining;
+        }
+        while !t.is_empty() {
+            let unborrowed_result = match utf8::decode(&t) {
+                Ok(s) => {
+                    debug_assert!(s.as_ptr() == t.as_ptr());
+                    debug_assert!(s.len() == t.len());
+                    Ok(())
+                }
+                Err(utf8::DecodeError::Invalid { valid_prefix, invalid_sequence, .. }) => {
+                    debug_assert!(valid_prefix.as_ptr() == t.as_ptr());
+                    debug_assert!(valid_prefix.len() <= t.len());
+                    Err((valid_prefix.len(), Err(valid_prefix.len() + invalid_sequence.len())))
+                }
+                Err(utf8::DecodeError::Incomplete { valid_prefix, incomplete_suffix }) => {
+                    debug_assert!(valid_prefix.as_ptr() == t.as_ptr());
+                    debug_assert!(valid_prefix.len() <= t.len());
+                    Err((valid_prefix.len(), Ok(incomplete_suffix)))
+                }
+            };
+            match unborrowed_result {
+                Ok(()) => {
+                    unsafe {
+                        self.inner_sink.process(t.reinterpret_without_validating())
+                    }
+                    return
+                }
+                Err((valid_len, and_then)) => {
+                    if valid_len > 0 {
+                        let subtendril = t.subtendril(0, valid_len as u32);
+                        unsafe {
+                            self.inner_sink.process(subtendril.reinterpret_without_validating())
+                        }
+                    }
+                    match and_then {
+                        Ok(incomplete) => {
+                            self.incomplete = Some(incomplete);
+                            return
+                        }
+                        Err(offset) => {
+                            self.inner_sink.error("invalid byte sequence".into());
+                            self.inner_sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
+                            t.pop_front(offset as u32);
+                        }
+                    }
                 }
             }
         }
@@ -166,7 +212,7 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
 
     #[inline]
     fn finish(mut self) -> Sink::Output {
-        if self.decoder.has_incomplete_sequence() {
+        if self.incomplete.is_some() {
             self.inner_sink.error("incomplete byte sequence at end of stream".into());
             self.inner_sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
         }
@@ -354,9 +400,9 @@ mod test {
         check_utf8(&[b"x", b"y", b"z"], &["x", "y", "z"], 0);
 
         check_utf8(&[b"xy\xEA\x99\xAEzw"], &["xy\u{a66e}zw"], 0);
-        check_utf8(&[b"xy\xEA", b"\x99\xAEzw"], &["xy", "\u{a66e}", "zw"], 0);
-        check_utf8(&[b"xy\xEA\x99", b"\xAEzw"], &["xy", "\u{a66e}", "zw"], 0);
-        check_utf8(&[b"xy\xEA", b"\x99", b"\xAEzw"], &["xy", "\u{a66e}", "zw"], 0);
+        check_utf8(&[b"xy\xEA", b"\x99\xAEzw"], &["xy", "\u{a66e}z", "w"], 0);
+        check_utf8(&[b"xy\xEA\x99", b"\xAEzw"], &["xy", "\u{a66e}z", "w"], 0);
+        check_utf8(&[b"xy\xEA", b"\x99", b"\xAEzw"], &["xy", "\u{a66e}z", "w"], 0);
         check_utf8(&[b"\xEA", b"", b"\x99", b"", b"\xAE"], &["\u{a66e}"], 0);
         check_utf8(&[b"", b"\xEA", b"", b"\x99", b"", b"\xAE", b""], &["\u{a66e}"], 0);
 
