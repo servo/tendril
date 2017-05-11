@@ -270,7 +270,7 @@ impl<A> Extend<char> for Tendril<fmt::UTF8, A>
         where I: IntoIterator<Item = char>,
     {
         let iterator = iterable.into_iter();
-        self.force_reserve(iterator.size_hint().0 as u32);
+        self.reserve(iterator.size_hint().0 as u32);
         for c in iterator {
             self.push_char(c);
         }
@@ -291,7 +291,7 @@ impl<A> Extend<u8> for Tendril<fmt::Bytes, A>
         where I: IntoIterator<Item = u8>,
     {
         let iterator = iterable.into_iter();
-        self.force_reserve(iterator.size_hint().0 as u32);
+        self.reserve(iterator.size_hint().0 as u32);
         for b in iterator {
             self.push_slice(&[b]);
         }
@@ -312,7 +312,7 @@ impl<'a, A> Extend<&'a u8> for Tendril<fmt::Bytes, A>
         where I: IntoIterator<Item = &'a u8>,
     {
         let iterator = iterable.into_iter();
-        self.force_reserve(iterator.size_hint().0 as u32);
+        self.reserve(iterator.size_hint().0 as u32);
         for &b in iterator {
             self.push_slice(&[b]);
         }
@@ -533,17 +533,17 @@ impl<F, A> Tendril<F, A>
     /// This is only a suggestion. There are cases where `Tendril` will
     /// decline to allocate until the buffer is actually modified.
     #[inline]
-    pub fn reserve(&mut self, additional: u32) {
+    pub fn maybe_reserve(&mut self, additional: u32) {
         if !self.is_shared() {
             // Don't grow a shared tendril because we'd have to copy
             // right away.
-            self.force_reserve(additional);
+            self.reserve(additional);
         }
     }
 
     /// Reserve space for additional bytes, even for shared buffers.
     #[inline]
-    fn force_reserve(&mut self, additional: u32) {
+    pub fn reserve(&mut self, additional: u32) {
         let new_len = self.len32().checked_add(additional).expect(OFLOW);
         if new_len > MAX_INLINE_LEN as u32 {
             unsafe {
@@ -562,6 +562,21 @@ impl<F, A> Tendril<F, A>
             EMPTY_TAG => 0,
             n if n <= MAX_INLINE_LEN => n as u32,
             _ => self.len,
+        }
+    }
+
+    /// Get the capacity of the `Tendril`.
+    ///
+    /// The capacity is the maximum number of underlyning items that can be added to this
+    /// `Tendril` before triggering an realocation.
+    #[inline(always)]
+    pub fn capacity(&self) -> u32 {
+        unsafe {
+            match *self.ptr.get() {
+                n if n <= MAX_INLINE_TAG => MAX_INLINE_LEN as u32,
+                n if n & 1 == 1 => self.len,
+                _ => self.assume_buf().0.cap
+            }
         }
     }
 
@@ -869,6 +884,22 @@ impl<F, A> Tendril<F, A>
         }
     }
 
+    /// Sets the length of a `Tendril`.
+    ///
+    /// This will explicitly set the length of the tendri, without actually
+    /// modifying its buffers, so it is up to the caller to ensure that the
+    /// tendril capacity is >= the new length.
+    #[inline]
+    pub unsafe fn set_len(&mut self, new_len: u32) {
+        if new_len <= MAX_INLINE_LEN as u32 {
+            *self = Tendril::inline(unsafe_slice(self.as_byte_slice(),
+                0, cmp::min(self.len32(), new_len) as usize));
+            self.ptr = Cell::new(inline_tag(new_len));
+        } else {
+            self.len = new_len
+        }
+    }
+
     /// Push some bytes onto the end of the `Tendril`, without validating.
     #[inline]
     pub unsafe fn push_bytes_without_validating(&mut self, buf: &[u8]) {
@@ -985,11 +1016,21 @@ impl<F, A> Tendril<F, A>
 
     #[inline]
     unsafe fn make_owned_with_capacity(&mut self, cap: u32) {
-        self.make_owned();
-        let mut buf = self.assume_buf().0;
-        buf.grow(cap);
-        self.ptr.set(NonZero::new(buf.ptr as usize));
-        self.aux.set(buf.cap);
+        let ptr = *self.ptr.get();
+        if ptr <= MAX_INLINE_TAG || (ptr & 1) == 1 {
+            let mut b = Buf32::with_capacity(cap, Header::new());
+            {
+                let self_slice = self.as_byte_slice();
+                ptr::copy_nonoverlapping(self_slice.as_ptr(), b.data_ptr(), self_slice.len());
+                b.len = self_slice.len() as u32;
+            }
+            *self = Tendril::owned(b);
+        } else {
+            let mut buf = self.assume_buf().0;
+            buf.grow(cap);
+            self.ptr.set(NonZero::new(buf.ptr as usize));
+            self.aux.set(buf.cap);
+        }
     }
 
     #[inline(always)]
@@ -1349,7 +1390,7 @@ impl<A> encoding::ByteWriter for Tendril<fmt::Bytes, A>
 
     #[inline]
     fn writer_hint(&mut self, additional: usize) {
-        self.reserve(cmp::min(u32::MAX as usize, additional) as u32);
+        self.maybe_reserve(cmp::min(u32::MAX as usize, additional) as u32);
     }
 }
 
@@ -1433,7 +1474,7 @@ impl<A> encoding::StringWriter for Tendril<fmt::UTF8, A>
 
     #[inline]
     fn writer_hint(&mut self, additional: usize) {
-        self.reserve(cmp::min(u32::MAX as usize, additional) as u32);
+        self.maybe_reserve(cmp::min(u32::MAX as usize, additional) as u32);
     }
 }
 
@@ -2043,7 +2084,7 @@ mod test {
         let a = t.subtendril(1, 10);
 
         assert!(t.is_shared());
-        t.reserve(10);
+        t.maybe_reserve(10);
         assert!(t.is_shared());
 
         let _ = a;
@@ -2245,5 +2286,32 @@ mod test {
             assert_eq!("x", &*s);
         }).join().unwrap();
         assert_eq!("x", &*t);
+    }
+
+    #[test]
+    fn set_len() {
+        let mut base = b"xyz".to_tendril();
+        let mut sub = base.subtendril(0, 2);
+
+        unsafe { base.set_len(8); }
+        assert_eq!(base.len(), 8);
+        assert_eq!(&base[0..3], b"xyz");
+        assert_eq!(sub.as_ref(), b"xy");
+
+        unsafe {
+            let prev_cap = base.capacity();
+            base.reserve(64 - prev_cap);
+            assert!(base.capacity() >= 64);
+            base.set_len(64);
+        }
+        assert_eq!(base.len(), 64);
+        assert_eq!(&base[0..3], b"xyz");
+
+        sub = base.subtendril(0, 10);
+        // asking for a mut slice will make it owned
+        base[0] = b'!';
+        // subslice will be backed by the older buffer
+        assert_eq!(sub[0], b'x');
+        assert_eq!(&base[0..3], b"!yz");
     }
 }
