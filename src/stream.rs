@@ -15,7 +15,7 @@ use std::io;
 use std::marker::PhantomData;
 use std::path::Path;
 
-use encoding::{EncodingRef, RawDecoder};
+#[cfg(feature = "encoding")] use encoding::{EncodingRef, RawDecoder};
 use utf8;
 
 /// Trait for types that can process a tendril.
@@ -225,12 +225,14 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
 /// and emits Unicode (`StrTendril`).
 ///
 /// This allocates new tendrils for encodings other than UTF-8.
+#[cfg(feature = "encoding")]
 pub struct LossyDecoder<Sink, A=NonAtomic>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity {
     inner: LossyDecoderInner<Sink, A>,
 }
 
+#[cfg(feature = "encoding")]
 enum LossyDecoderInner<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity {
@@ -238,6 +240,7 @@ enum LossyDecoderInner<Sink, A>
     Other(Box<RawDecoder>, Sink)
 }
 
+#[cfg(feature = "encoding")]
 impl<Sink, A> LossyDecoder<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity,
@@ -282,6 +285,7 @@ impl<Sink, A> LossyDecoder<Sink, A>
     }
 }
 
+#[cfg(feature = "encoding")]
 impl<Sink, A> TendrilSink<fmt::Bytes, A> for LossyDecoder<Sink, A>
     where Sink: TendrilSink<fmt::UTF8, A>,
           A: Atomicity,
@@ -342,12 +346,14 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for LossyDecoder<Sink, A>
 
 #[cfg(test)]
 mod test {
-    use super::{TendrilSink, LossyDecoder, Utf8LossyDecoder};
-    use tendril::{Tendril, Atomicity, SliceExt, NonAtomic};
+    use super::{TendrilSink, Utf8LossyDecoder};
+    use tendril::{Tendril, Atomicity, NonAtomic};
     use fmt;
     use std::borrow::Cow;
-    use encoding::EncodingRef;
-    use encoding::all as enc;
+    #[cfg(feature = "encoding")] use encoding::EncodingRef;
+    #[cfg(feature = "encoding")] use encoding::all as enc;
+    #[cfg(feature = "encoding")] use super::LossyDecoder;
+    #[cfg(feature = "encoding")] use tendril::SliceExt;
 
     struct Accumulate<A>
         where A: Atomicity,
@@ -423,6 +429,7 @@ mod test {
         check_utf8(&[b"\xEA\x99"], &["\u{fffd}"], 1);
     }
 
+    #[cfg(feature = "encoding")]
     fn check_decode(enc: EncodingRef, input: &[&[u8]], expected: &str, errs: usize) {
         let mut decoder = LossyDecoder::new(enc, Accumulate::new());
         for x in input {
@@ -438,6 +445,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "encoding")]
     fn decode_ascii() {
         check_decode(enc::ASCII, &[], "", 0);
         check_decode(enc::ASCII, &[b""], "", 0);
@@ -452,6 +460,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "encoding")]
     fn decode_utf8() {
         check_decode(enc::UTF_8, &[], "", 0);
         check_decode(enc::UTF_8, &[b""], "", 0);
@@ -477,6 +486,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "encoding")]
     fn decode_koi8_u() {
         check_decode(enc::KOI8_U, &[b"\xfc\xce\xc5\xd2\xc7\xc9\xd1"], "Энергия", 0);
         check_decode(enc::KOI8_U, &[b"\xfc\xce", b"\xc5\xd2\xc7\xc9\xd1"], "Энергия", 0);
@@ -485,6 +495,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "encoding")]
     fn decode_windows_949() {
         check_decode(enc::WINDOWS_949, &[], "", 0);
         check_decode(enc::WINDOWS_949, &[b""], "", 0);

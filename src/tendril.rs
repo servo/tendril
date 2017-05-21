@@ -4,10 +4,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::{ptr, mem, hash, str, u32, io, slice, cmp};
+use std::{ptr, mem, hash, str, u32, io, slice};
 use std::sync::atomic::{self, AtomicUsize};
 use std::sync::atomic::Ordering as AtomicOrdering;
-use std::borrow::{Borrow, Cow};
+use std::borrow::Borrow;
 use std::marker::PhantomData;
 use std::cell::Cell;
 use std::ops::{Deref, DerefMut};
@@ -17,7 +17,8 @@ use std::default::Default;
 use std::cmp::Ordering;
 use std::fmt as strfmt;
 
-use encoding::{self, EncodingRef, DecoderTrap, EncoderTrap};
+#[cfg(feature = "encoding")] use encoding::{self, EncodingRef, DecoderTrap, EncoderTrap};
+
 
 use buf32::{self, Buf32};
 use fmt::{self, Slice};
@@ -1334,6 +1335,7 @@ impl<A> io::Write for Tendril<fmt::Bytes, A>
     }
 }
 
+#[cfg(feature = "encoding")]
 impl<A> encoding::ByteWriter for Tendril<fmt::Bytes, A>
     where A: Atomicity,
 {
@@ -1349,7 +1351,7 @@ impl<A> encoding::ByteWriter for Tendril<fmt::Bytes, A>
 
     #[inline]
     fn writer_hint(&mut self, additional: usize) {
-        self.reserve(cmp::min(u32::MAX as usize, additional) as u32);
+        self.reserve(::std::cmp::min(u32::MAX as usize, additional) as u32);
     }
 }
 
@@ -1362,8 +1364,9 @@ impl<F, A> Tendril<F, A>
     /// See the [rust-encoding docs](https://lifthrasiir.github.io/rust-encoding/encoding/)
     /// for more information.
     #[inline]
+    #[cfg(feature = "encoding")]
     pub fn decode(&self, encoding: EncodingRef, trap: DecoderTrap)
-        -> Result<Tendril<fmt::UTF8, A>, Cow<'static, str>>
+        -> Result<Tendril<fmt::UTF8, A>, ::std::borrow::Cow<'static, str>>
     {
         let mut ret = Tendril::new();
         encoding.decode_to(&*self, trap, &mut ret).map(|_| ret)
@@ -1418,6 +1421,7 @@ impl<A> strfmt::Write for Tendril<fmt::UTF8, A>
     }
 }
 
+#[cfg(feature = "encoding")]
 impl<A> encoding::StringWriter for Tendril<fmt::UTF8, A>
     where A: Atomicity,
 {
@@ -1433,7 +1437,7 @@ impl<A> encoding::StringWriter for Tendril<fmt::UTF8, A>
 
     #[inline]
     fn writer_hint(&mut self, additional: usize) {
-        self.reserve(cmp::min(u32::MAX as usize, additional) as u32);
+        self.reserve(::std::cmp::min(u32::MAX as usize, additional) as u32);
     }
 }
 
@@ -1445,8 +1449,9 @@ impl<A> Tendril<fmt::UTF8, A>
     /// See the [rust-encoding docs](https://lifthrasiir.github.io/rust-encoding/encoding/)
     /// for more information.
     #[inline]
+    #[cfg(feature = "encoding")]
     pub fn encode(&self, encoding: EncodingRef, trap: EncoderTrap)
-        -> Result<Tendril<fmt::Bytes, A>, Cow<'static, str>>
+        -> Result<Tendril<fmt::Bytes, A>, ::std::borrow::Cow<'static, str>>
     {
         let mut ret = Tendril::new();
         encoding.encode_to(&*self, trap, &mut ret).map(|_| ret)
@@ -1903,6 +1908,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "encoding")]
     fn encode() {
         use encoding::{all, EncoderTrap};
 
@@ -1920,6 +1926,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "encoding")]
     fn decode() {
         use encoding::{all, DecoderTrap};
 

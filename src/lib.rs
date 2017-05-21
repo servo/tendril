@@ -9,6 +9,7 @@
 #![cfg_attr(test, deny(warnings))]
 
 #[cfg(feature = "unstable")] extern crate core;
+#[cfg(feature = "encoding")] pub extern crate encoding;
 #[macro_use] extern crate mac;
 extern crate futf;
 extern crate utf8;
@@ -24,12 +25,6 @@ pub use utf8_decode::IncompleteUtf8;
 
 pub mod fmt;
 pub mod stream;
-
-/// Re-export the rust-encoding crate.
-pub mod encoding {
-    extern crate encoding;
-    pub use self::encoding::*;
-}
 
 mod util;
 mod buf32;
