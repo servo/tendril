@@ -1,6 +1,6 @@
 [package]
 name = "tendril"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Keegan McAllister <mcallister.keegan@gmail.com>",
            "Simon Sapin <simon.sapin@exyr.org>",
            "Chris Morgan <me@chrismorgan.info>"]
@@ -19,4 +19,4 @@ utf-8 = "0.7"
 rand = "0"
 
 [features]
-unstable = []
+bench = []

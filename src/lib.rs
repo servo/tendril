@@ -4,16 +4,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![cfg_attr(all(test, feature = "unstable"), feature(test))]
+#![cfg_attr(all(test, feature = "bench"), feature(test))]
 #![cfg_attr(test, deny(warnings))]
 
+#[cfg(all(test, feature = "bench"))] extern crate test;
 #[cfg(feature = "encoding")] pub extern crate encoding;
 #[macro_use] extern crate mac;
 extern crate futf;
 extern crate utf8;
-
-#[cfg(all(test, feature = "unstable"))]
-extern crate test;
 
 pub use tendril::{Tendril, ByteTendril, StrTendril, SliceExt, ReadExt, SubtendrilError};
 pub use tendril::{SendTendril, Atomicity, Atomic, NonAtomic};
