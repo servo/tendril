@@ -47,7 +47,7 @@ fn inline_tag(len: u32) -> NonZeroUsize {
 ///
 /// Exactly two types implement this trait:
 ///
-/// - `Atomic`: use this in your tendril and you will have a `Send + Sync` tendril which works
+/// - `Atomic`: use this in your tendril and you will have a `Send` tendril which works
 ///   across threads; this is akin to `Arc`.
 ///
 /// - `NonAtomic`: use this in your tendril and you will have a tendril which is neither
@@ -104,8 +104,8 @@ unsafe impl Atomicity for NonAtomic {
 
 /// A marker of an atomic (and hence concurrent) tendril.
 ///
-/// This is used as the second, optional type parameter of a `Tendril`; `Tendril<F, Atomic>` thus
-/// implements both `Send` and `Sync`.
+/// This is used as the second, optional type parameter of a `Tendril`;
+/// `Tendril<F, Atomic>` thus implements`Send`.
 ///
 /// This is akin to using `Arc` for reference counting.
 pub struct Atomic(AtomicUsize);
@@ -182,7 +182,7 @@ pub enum SubtendrilError {
 ///
 /// The type parameter `A` indicates the atomicity of the tendril; it is by
 /// default `NonAtomic`, but can be specified as `Atomic` to get a tendril
-/// which implements `Send` and `Sync` (viz. a thread-safe tendril).
+/// which implements `Send` (viz. a thread-safe tendril).
 ///
 /// The maximum length of a `Tendril` is 4 GB. The library will panic if
 /// you attempt to go over the limit.
@@ -199,7 +199,6 @@ pub struct Tendril<F, A = NonAtomic>
 }
 
 unsafe impl<F, A> Send for Tendril<F, A> where F: fmt::Format, A: Atomicity + Sync { }
-unsafe impl<F, A> Sync for Tendril<F, A> where F: fmt::Format, A: Atomicity + Sync { }
 
 /// `Tendril` for storing native Rust strings.
 pub type StrTendril = Tendril<fmt::UTF8>;
@@ -1561,7 +1560,6 @@ mod test {
     use std::thread;
 
     fn assert_send<T: Send>() { }
-    fn assert_sync<T: Sync>() { }
 
     #[test]
     fn smoke_test() {
@@ -2208,7 +2206,6 @@ mod test {
     #[test]
     fn atomic() {
         assert_send::<Tendril<fmt::UTF8, Atomic>>();
-        assert_sync::<Tendril<fmt::UTF8, Atomic>>();
         let s: Tendril<fmt::UTF8, Atomic> = Tendril::from_slice("this is a string");
         assert!(!s.is_shared());
         let mut t = s.clone();
