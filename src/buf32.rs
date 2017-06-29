@@ -16,7 +16,6 @@ pub const MAX_LEN: usize = u32::MAX as usize;
 
 /// A buffer points to a header of type `H`, which is followed by `MIN_CAP` or more
 /// bytes of storage.
-#[repr(packed)]
 pub struct Buf32<H> {
     pub ptr: *mut H,
     pub len: u32,

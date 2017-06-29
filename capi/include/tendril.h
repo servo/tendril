@@ -102,7 +102,7 @@ void tendril_debug_dump(const tendril *t, FILE *stream);
 //// implementation details follow
 ////
 
-__attribute__((packed)) struct tendril_impl {
+struct tendril_impl {
     uintptr_t __ptr;
     uint32_t __a;
     uint32_t __b;
