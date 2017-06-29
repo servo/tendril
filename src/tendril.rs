@@ -24,7 +24,7 @@ use buf32::{self, Buf32};
 use fmt::{self, Slice};
 use fmt::imp::Fixup;
 use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut, copy_lifetime,
-           NonZero};
+           NonZeroUsize};
 use OFLOW;
 
 const MAX_INLINE_LEN: usize = 8;
@@ -32,10 +32,10 @@ const MAX_INLINE_TAG: usize = 0xF;
 const EMPTY_TAG: usize = 0xF;
 
 #[inline(always)]
-fn inline_tag(len: u32) -> NonZero<usize> {
+fn inline_tag(len: u32) -> NonZeroUsize {
     debug_assert!(len <= MAX_INLINE_LEN as u32);
     unsafe {
-        NonZero::new(if len == 0 {
+        NonZeroUsize::new(if len == 0 {
             EMPTY_TAG
         } else {
             len as usize
@@ -191,7 +191,7 @@ pub struct Tendril<F, A = NonAtomic>
     where F: fmt::Format,
           A: Atomicity,
 {
-    ptr: Cell<NonZero<usize>>,
+    ptr: Cell<NonZeroUsize>,
     len: u32,
     aux: Cell<u32>,
     marker: PhantomData<*mut F>,
@@ -586,7 +586,7 @@ impl<F, A> Tendril<F, A>
     #[inline]
     pub fn clear(&mut self) {
         if self.ptr.get().get() <= MAX_INLINE_TAG {
-            self.ptr.set(unsafe { NonZero::new(EMPTY_TAG) });
+            self.ptr.set(unsafe { NonZeroUsize::new(EMPTY_TAG) });
         } else {
             let (_, shared, _) = unsafe { self.assume_buf() };
             if shared {
@@ -966,7 +966,7 @@ impl<F, A> Tendril<F, A>
             let header = p as *mut Header<A>;
             (*header).cap = self.aux.get();
 
-            self.ptr.set(NonZero::new(p | 1));
+            self.ptr.set(NonZeroUsize::new(p | 1));
             self.aux.set(0);
         }
     }
@@ -989,7 +989,7 @@ impl<F, A> Tendril<F, A>
         self.make_owned();
         let mut buf = self.assume_buf().0;
         buf.grow(cap);
-        self.ptr.set(NonZero::new(buf.ptr as usize));
+        self.ptr.set(NonZeroUsize::new(buf.ptr as usize));
         self.aux.set(buf.cap);
     }
 
@@ -1032,7 +1032,7 @@ impl<F, A> Tendril<F, A>
     #[inline]
     unsafe fn owned(x: Buf32<Header<A>>) -> Tendril<F, A> {
         Tendril {
-            ptr: Cell::new(NonZero::new(x.ptr as usize)),
+            ptr: Cell::new(NonZeroUsize::new(x.ptr as usize)),
             len: x.len,
             aux: Cell::new(x.cap),
             marker: PhantomData,
@@ -1052,7 +1052,7 @@ impl<F, A> Tendril<F, A>
     #[inline]
     unsafe fn shared(buf: Buf32<Header<A>>, off: u32, len: u32) -> Tendril<F, A> {
         Tendril {
-            ptr: Cell::new(NonZero::new((buf.ptr as usize) | 1)),
+            ptr: Cell::new(NonZeroUsize::new((buf.ptr as usize) | 1)),
             len: len,
             aux: Cell::new(off),
             marker: PhantomData,
@@ -1589,9 +1589,6 @@ mod test {
         assert_eq!(correct, mem::size_of::<ByteTendril>());
         assert_eq!(correct, mem::size_of::<StrTendril>());
 
-        // Check that the NonZero<T> optimization is working, if on unstable Rust.
-        let option_tag = if cfg!(feature = "unstable") { 0 } else { 1 };
-        let correct = correct + option_tag;
         assert_eq!(correct, mem::size_of::<Option<ByteTendril>>());
         assert_eq!(correct, mem::size_of::<Option<StrTendril>>());
 

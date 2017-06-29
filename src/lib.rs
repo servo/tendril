@@ -4,11 +4,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![cfg_attr(feature = "unstable", feature(nonzero))]
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 #![cfg_attr(test, deny(warnings))]
 
-#[cfg(feature = "unstable")] extern crate core;
 #[cfg(feature = "encoding")] pub extern crate encoding;
 #[macro_use] extern crate mac;
 extern crate futf;

@@ -40,19 +40,17 @@ pub unsafe fn copy_lifetime<'a, S: ?Sized, T: ?Sized + 'a>
     mem::transmute(ptr)
 }
 
-#[cfg(feature = "unstable")] pub use core::nonzero::NonZero;
-
-#[cfg(not(feature = "unstable"))]
 #[derive(Copy, Clone)]
-pub struct NonZero<T>(T);
+pub struct NonZeroUsize(&'static u8);
 
-#[cfg(not(feature = "unstable"))]
-impl<T> NonZero<T> {
-    pub unsafe fn new(x: T) -> NonZero<T> { NonZero(x) }
-}
-
-#[cfg(not(feature = "unstable"))]
-impl<T> NonZero<T> {
+impl NonZeroUsize {
     #[inline]
-    pub fn get(self) -> T { self.0 }
+    pub unsafe fn new(value: usize) -> Self {
+        NonZeroUsize(&*(value as *const u8))
+    }
+
+    #[inline]
+    pub fn get(self) -> usize {
+        self.0 as *const u8 as usize
+    }
 }
