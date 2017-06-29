@@ -46,6 +46,7 @@ pub struct NonZeroUsize(&'static u8);
 impl NonZeroUsize {
     #[inline]
     pub unsafe fn new(value: usize) -> Self {
+        debug_assert!(value != 0);
         NonZeroUsize(&*(value as *const u8))
     }
 
