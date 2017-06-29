@@ -105,7 +105,7 @@ fn fuzz() {
 fn random_boundary<R: Rng>(rng: &mut R, text: &str) -> usize {
     loop {
         let i = Range::new(0, text.len()+1).ind_sample(rng);
-        if is_char_boundary(text, i) {
+        if text.is_char_boundary(i) {
             return i;
         }
     }
@@ -115,22 +115,13 @@ fn random_slice<R: Rng>(rng: &mut R, text: &str) -> (usize, usize) {
     loop {
         let start = Range::new(0, text.len()+1).ind_sample(rng);
         let end = Range::new(start, text.len()+1).ind_sample(rng);
-        if !is_char_boundary(text, start) {
+        if !text.is_char_boundary(start) {
             continue;
         }
-        if end < text.len() && !is_char_boundary(text, end) {
+        if end < text.len() && !text.is_char_boundary(end) {
             continue;
         }
         return (start, end);
-    }
-}
-
-// Copy of the str::is_char_boundary method, which is unstable.
-fn is_char_boundary(s: &str, index: usize) -> bool {
-    if index == s.len() { return true; }
-    match s.as_bytes().get(index) {
-        None => false,
-        Some(&b) => b < 128 || b >= 192,
     }
 }
 
