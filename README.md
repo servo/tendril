@@ -5,7 +5,7 @@ contains a substantial amount of `unsafe` code. Use at your own risk!
 
 [![Build Status](https://travis-ci.org/servo/tendril.svg?branch=master)](https://travis-ci.org/servo/tendril)
 
-[API Documentation](http://doc.servo.org/tendril/index.html)
+[API Documentation](https://doc.servo.org/tendril/index.html)
 
 ## Introduction
 
@@ -31,7 +31,7 @@ to go over the limit.
 
 ## Formats and encoding
 
-`Tendril` uses [phantom types](http://rustbyexample.com/generics/phantom.html)
+`Tendril` uses [phantom types](https://rustbyexample.com/generics/phantom.html)
 to track a buffer's format. This determines at compile time which
 operations are available on a given tendril. For example, `Tendril<UTF8>` and
 `Tendril<Bytes>` can be borrowed as `&str` and `&[u8]` respectively.
@@ -107,9 +107,9 @@ metadata is chosen by the API consumer; it defaults to `()`, which has size
 zero. For any non-inline string, we can provide the associated metadata as well
 as a byte offset.
 
-[NonZero]: http://doc.rust-lang.org/core/nonzero/struct.NonZero.html
+[NonZero]: https://doc.rust-lang.org/core/nonzero/struct.NonZero.html
 [html5ever]: https://github.com/servo/html5ever
-[WTF-8]: http://simonsapin.github.io/wtf-8/
-[rope]: http://en.wikipedia.org/wiki/Rope_%28data_structure%29
-[persistent data structure]: http://en.wikipedia.org/wiki/Persistent_data_structure
-[2-3 finger tree]: http://staff.city.ac.uk/~ross/papers/FingerTree.html
+[WTF-8]: https://simonsapin.github.io/wtf-8/
+[rope]: https://en.wikipedia.org/wiki/Rope_%28data_structure%29
+[persistent data structure]: https://en.wikipedia.org/wiki/Persistent_data_structure
+[2-3 finger tree]: https://staff.city.ac.uk/~ross/papers/FingerTree.html
