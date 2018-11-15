@@ -1655,7 +1655,7 @@ mod test {
         let t = "anextralongstring".to_tendril();
         assert_eq!(r#"Tendril<UTF8>(owned: "anextralongstring")"#,
                    &*format!("{:?}", t));
-        t.clone();
+        let _ = t.clone();
         assert_eq!(r#"Tendril<UTF8>(shared: "anextralongstring")"#,
                    &*format!("{:?}", t));
     }

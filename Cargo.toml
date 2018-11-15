@@ -16,7 +16,7 @@ futf = "0.1.1"
 utf-8 = "0.7"
 
 [dev-dependencies]
-rand = "0"
+rand = "0.4"
 
 [features]
 bench = []
