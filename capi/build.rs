@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![allow(deprecated)]
 
 extern crate gcc;
 

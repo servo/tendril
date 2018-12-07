@@ -9,6 +9,7 @@
 
 #[cfg(all(test, feature = "bench"))] extern crate test;
 #[cfg(feature = "encoding")] pub extern crate encoding;
+#[cfg(feature = "encoding_rs")] pub extern crate encoding_rs;
 #[macro_use] extern crate mac;
 extern crate futf;
 extern crate utf8;
