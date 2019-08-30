@@ -31,3 +31,11 @@ path = "fuzz_targets/pop_front.rs"
 [[bin]]
 name = "pop_back"
 path = "fuzz_targets/pop_back.rs"
+
+[[bin]]
+name = "subtendril"
+path = "fuzz_targets/subtendril.rs"
+
+[[bin]]
+name = "try_push_char"
+path = "fuzz_targets/try_push_char.rs"
