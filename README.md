@@ -3,9 +3,9 @@
 **Warning**: This library is at a very early stage of development, and it
 contains a substantial amount of `unsafe` code. Use at your own risk!
 
-[![Build Status](https://travis-ci.org/servo/tendril.svg?branch=master)](https://travis-ci.org/servo/tendril)
+[![Build Status](https://travis-ci.com/servo/tendril.svg?branch=master)](https://travis-ci.com/servo/tendril)
 
-[API Documentation](http://doc.servo.org/tendril/index.html)
+[API Documentation](https://doc.servo.org/tendril/index.html)
 
 ## Introduction
 
@@ -57,8 +57,8 @@ int main() {
 }
 ```
 
-See the [API documentation](https://github.com/kmcallister/tendril/blob/master/capi/include/tendril.h#L18)
-and the [test program](https://github.com/kmcallister/tendril/blob/master/capi/ctest/test.c).
+See the [API documentation](https://github.com/servo/tendril/blob/master/capi/include/tendril.h#L18)
+and the [test program](https://github.com/servo/tendril/blob/master/capi/ctest/test.c).
 
 ## Plans for the future
 
@@ -110,6 +110,6 @@ as a byte offset.
 [NonZero]: http://doc.rust-lang.org/core/nonzero/struct.NonZero.html
 [html5ever]: https://github.com/servo/html5ever
 [WTF-8]: http://simonsapin.github.io/wtf-8/
-[rope]: http://en.wikipedia.org/wiki/Rope_%28data_structure%29
-[persistent data structure]: http://en.wikipedia.org/wiki/Persistent_data_structure
-[2-3 finger tree]: http://staff.city.ac.uk/~ross/papers/FingerTree.html
+[rope]: https://en.wikipedia.org/wiki/Rope_%28data_structure%29
+[persistent data structure]: https://en.wikipedia.org/wiki/Persistent_data_structure
+[2-3 finger tree]: http://www.staff.city.ac.uk/~ross/papers/FingerTree.html
