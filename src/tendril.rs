@@ -18,14 +18,14 @@ use std::cmp::Ordering;
 use std::fmt as strfmt;
 
 #[cfg(feature = "encoding")] use encoding::{self, EncodingRef, DecoderTrap, EncoderTrap};
+use mac::unwrap_or_return;
 
-
-use buf32::{self, Buf32};
-use fmt::{self, Slice};
-use fmt::imp::Fixup;
-use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut, copy_lifetime,
+use crate::buf32::{self, Buf32};
+use crate::fmt::{self, Slice};
+use crate::fmt::imp::Fixup;
+use crate::util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut, copy_lifetime,
            NonZeroUsize};
-use OFLOW;
+use crate::OFLOW;
 
 const MAX_INLINE_LEN: usize = 8;
 const MAX_INLINE_TAG: usize = 0xF;
@@ -488,8 +488,8 @@ impl<F, A> strfmt::Debug for Tendril<F, A>
             _ => "owned",
         };
 
-        try!(write!(f, "Tendril<{:?}>({}: ", <F as Default>::default(), kind));
-        try!(<<F as fmt::SliceFormat>::Slice as strfmt::Debug>::fmt(&**self, f));
+        write!(f, "Tendril<{:?}>({}: ", <F as Default>::default(), kind)?;
+        <<F as fmt::SliceFormat>::Slice as strfmt::Debug>::fmt(&**self, f)?;
         write!(f, ")")
     }
 }
@@ -1555,7 +1555,7 @@ mod bench;
 mod test {
     use super::{Tendril, ByteTendril, StrTendril, SendTendril,
                 ReadExt, SliceExt, Header, NonAtomic, Atomic};
-    use fmt;
+    use crate::fmt;
     use std::iter;
     use std::thread;
 

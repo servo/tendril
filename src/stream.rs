@@ -6,8 +6,8 @@
 
 //! Streams of tendrils.
 
-use tendril::{Tendril, Atomicity, NonAtomic};
-use fmt;
+use crate::tendril::{Tendril, Atomicity, NonAtomic};
+use crate::fmt;
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -92,7 +92,7 @@ pub trait TendrilSink<F, A=NonAtomic>
     /// then finish. Return `Err` at the first I/O error.
     fn from_file<P>(self, path: P) -> io::Result<Self::Output>
     where Self: Sized, P: AsRef<Path>, F: fmt::SliceFormat<Slice=[u8]> {
-        self.read_from(&mut try!(File::open(path)))
+        self.read_from(&mut File::open(path)?)
     }
 }
 
@@ -239,7 +239,7 @@ enum LossyDecoderInner<Sink, A>
           A: Atomicity {
     Utf8(Utf8LossyDecoder<Sink, A>),
     #[cfg(feature = "encoding")]
-    Encoding(Box<encoding::RawDecoder>, Sink),
+    Encoding(Box<dyn encoding::RawDecoder>, Sink),
     #[cfg(feature = "encoding_rs")]
     EncodingRs(encoding_rs::Decoder, Sink),
 }
@@ -431,14 +431,14 @@ where
 #[cfg(test)]
 mod test {
     use super::{TendrilSink, Utf8LossyDecoder};
-    use tendril::{Tendril, Atomicity, NonAtomic};
-    use fmt;
+    use crate::tendril::{Tendril, Atomicity, NonAtomic};
+    use crate::fmt;
     use std::borrow::Cow;
 
     #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
     use super::LossyDecoder;
     #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
-    use tendril::SliceExt;
+    use crate::tendril::SliceExt;
 
     #[cfg(feature = "encoding")] use encoding::all as enc;
     #[cfg(feature = "encoding_rs")] use encoding_rs as enc_rs;

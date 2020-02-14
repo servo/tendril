@@ -8,7 +8,7 @@
 
 use std::{mem, ptr, u32, slice};
 
-use OFLOW;
+use crate::OFLOW;
 
 pub const MIN_CAP: u32 = 16;
 

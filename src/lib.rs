@@ -8,17 +8,8 @@
 #![cfg_attr(test, deny(warnings))]
 
 #[cfg(all(test, feature = "bench"))] extern crate test;
-#[cfg(feature = "encoding")] pub extern crate encoding;
-#[cfg(feature = "encoding_rs")] pub extern crate encoding_rs;
-#[macro_use] extern crate mac;
-extern crate futf;
-extern crate utf8;
-
-pub use tendril::{Tendril, ByteTendril, StrTendril, SliceExt, ReadExt, SubtendrilError};
-pub use tendril::{SendTendril, Atomicity, Atomic, NonAtomic};
-pub use fmt::Format;
-pub use stream::TendrilSink;
-pub use utf8_decode::IncompleteUtf8;
+#[cfg(feature = "encoding")] pub use encoding;
+#[cfg(feature = "encoding_rs")] pub use encoding_rs;
 
 pub mod fmt;
 pub mod stream;
@@ -28,4 +19,10 @@ mod buf32;
 mod tendril;
 mod utf8_decode;
 
-static OFLOW: &'static str = "tendril: overflow in buffer arithmetic";
+pub use crate::tendril::{Tendril, ByteTendril, StrTendril, SliceExt, ReadExt, SubtendrilError};
+pub use crate::tendril::{SendTendril, Atomicity, Atomic, NonAtomic};
+pub use fmt::Format;
+pub use stream::TendrilSink;
+pub use utf8_decode::IncompleteUtf8;
+
+static OFLOW: &str = "tendril: overflow in buffer arithmetic";

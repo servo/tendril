@@ -24,8 +24,9 @@ use std::default::Default;
 use std::io::Write;
 
 use futf::{self, Codepoint, Meaning};
+use mac::unwrap_or_return;
 
-use util::unsafe_slice;
+use crate::util::unsafe_slice;
 
 /// Implementation details.
 ///
