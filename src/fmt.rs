@@ -24,16 +24,18 @@ use std::default::Default;
 use std::io::Write;
 
 use futf::{self, Codepoint, Meaning};
+use mac::unwrap_or_return;
 
-use util::unsafe_slice;
+use crate::util::unsafe_slice;
 
 /// Implementation details.
 ///
 /// You don't need these unless you are implementing
 /// a new format.
 pub mod imp {
-    use std::{iter, slice, mem};
+    use std::{iter, slice};
     use std::default::Default;
+    use std::char;
 
     /// Describes how to fix up encodings when concatenating.
     ///
@@ -60,7 +62,7 @@ pub mod imp {
 
     #[inline(always)]
     unsafe fn from_u32_unchecked(n: u32) -> char {
-        mem::transmute(n)
+        char::from_u32_unchecked(n)
     }
 
     pub struct SingleByteCharIndices<'a> {
@@ -73,7 +75,7 @@ pub mod imp {
         #[inline]
         fn next(&mut self) -> Option<(usize, char)> {
             self.inner.next().map(|(i, &b)| unsafe {
-                (i, from_u32_unchecked(b as u32))
+                (i, from_u32_unchecked(u32::from(b)))
             })
         }
     }
@@ -126,12 +128,14 @@ pub unsafe trait Format {
     ///
     /// The default is to do nothing.
     ///
+    /// # Safety
+    ///
     /// The function is `unsafe` because it may assume the input
     /// buffers are already valid for the format. Also, no
     /// bounds-checking is performed on the return value!
     #[inline(always)]
     unsafe fn fixup(_lhs: &[u8], _rhs: &[u8]) -> imp::Fixup {
-        Default::default()
+        imp::Fixup::default()
     }
 }
 
@@ -291,9 +295,10 @@ unsafe impl Format for UTF8 {
 
     #[inline]
     fn validate_prefix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
+
         match futf::classify(buf, buf.len() - 1) {
             Some(Codepoint { meaning: Meaning::Whole(_), .. }) => true,
             _ => false,
@@ -302,9 +307,10 @@ unsafe impl Format for UTF8 {
 
     #[inline]
     fn validate_suffix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
+
         match futf::classify(buf, 0) {
             Some(Codepoint { meaning: Meaning::Whole(_), .. }) => true,
             _ => false,
@@ -337,7 +343,7 @@ unsafe impl Slice for str {
 
     #[inline(always)]
     unsafe fn from_mut_bytes(x: &mut [u8]) -> &mut str {
-        mem::transmute(x)
+        str::from_utf8_unchecked_mut(x)
     }
 }
 
@@ -405,7 +411,7 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     fn validate_prefix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
         match futf::classify(buf, buf.len() - 1) {
@@ -416,7 +422,7 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     fn validate_suffix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
         match futf::classify(buf, 0) {
@@ -433,7 +439,7 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     unsafe fn fixup(lhs: &[u8], rhs: &[u8]) -> imp::Fixup {
-        const ERR: &'static str = "WTF8: internal error";
+        const ERR: &str = "WTF8: internal error";
 
         if lhs.len() >= 3 && rhs.len() >= 3 {
             if let (Some(Codepoint { meaning: Meaning::LeadSurrogate(hi), .. }),
@@ -447,7 +453,7 @@ unsafe impl Format for WTF8 {
                     insert_bytes: mem::uninitialized(),
                 };
 
-                let n = 0x10000 + ((hi as u32) << 10) + (lo as u32);
+                let n = 0x10000 + (u32::from(hi) << 10) + u32::from(lo);
 
                 fixup.insert_len = {
                     let mut buffer = &mut fixup.insert_bytes[..];
@@ -460,7 +466,7 @@ unsafe impl Format for WTF8 {
             }
         }
 
-        Default::default()
+        imp::Fixup::default()
     }
 }
 

@@ -4,8 +4,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use fmt;
-use tendril::{Tendril, Atomicity};
+use crate::fmt;
+use crate::tendril::{Tendril, Atomicity};
 use utf8;
 
 pub struct IncompleteUtf8(utf8::Incomplete);
