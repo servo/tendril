@@ -5,7 +5,7 @@
 // except according to those terms.
 
 #![cfg_attr(all(test, feature = "bench"), feature(test))]
-#![cfg_attr(test, deny(warnings))]
+//#![cfg_attr(test, deny(warnings))]
 
 #[cfg(all(test, feature = "bench"))] extern crate test;
 #[cfg(feature = "encoding")] pub use encoding;
