@@ -431,11 +431,6 @@ impl<F, A> PartialEq for Tendril<F, A>
     fn eq(&self, other: &Self) -> bool {
         self.as_byte_slice() == other.as_byte_slice()
     }
-
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        self.as_byte_slice() != other.as_byte_slice()
-    }
 }
 
 impl<F, A> Eq for Tendril<F, A>
@@ -600,9 +595,10 @@ impl<F, A> Tendril<F, A>
     /// Build a `Tendril` by copying a byte slice, if it conforms to the format.
     #[inline]
     pub fn try_from_byte_slice(x: &[u8]) -> Result<Tendril<F, A>, ()> {
-        match F::validate(x) {
-            true => Ok(unsafe { Tendril::from_byte_slice_without_validating(x) }),
-            false => Err(()),
+        if F::validate(x) {
+            Ok(unsafe { Tendril::from_byte_slice_without_validating(x) })
+        } else {
+            Err(())
         }
     }
 
@@ -655,9 +651,10 @@ impl<F, A> Tendril<F, A>
     pub fn try_as_subset<Sub>(&self) -> Result<&Tendril<Sub, A>, ()>
         where Sub: fmt::SubsetOf<F>,
     {
-        match Sub::revalidate_subset(self.as_byte_slice()) {
-            true => Ok(unsafe { mem::transmute(self) }),
-            false => Err(()),
+        if Sub::revalidate_subset(self.as_byte_slice()) {
+            Ok(unsafe { mem::transmute(self) })
+        } else {
+            Err(())
         }
     }
 
@@ -666,9 +663,10 @@ impl<F, A> Tendril<F, A>
     pub fn try_into_subset<Sub>(self) -> Result<Tendril<Sub, A>, Self>
         where Sub: fmt::SubsetOf<F>,
     {
-        match Sub::revalidate_subset(self.as_byte_slice()) {
-            true => Ok(unsafe { mem::transmute(self) }),
-            false => Err(self),
+        if Sub::revalidate_subset(self.as_byte_slice()) {
+            Ok(unsafe { mem::transmute(self) })
+        } else {
+            Err(self)
         }
     }
 
@@ -678,9 +676,10 @@ impl<F, A> Tendril<F, A>
     pub fn try_reinterpret_view<Other>(&self) -> Result<&Tendril<Other, A>, ()>
         where Other: fmt::Format,
     {
-        match Other::validate(self.as_byte_slice()) {
-            true => Ok(unsafe { mem::transmute(self) }),
-            false => Err(()),
+        if Other::validate(self.as_byte_slice()) {
+            Ok(unsafe { mem::transmute(self) })
+        } else {
+            Err(())
         }
     }
 
@@ -694,9 +693,10 @@ impl<F, A> Tendril<F, A>
     pub fn try_reinterpret<Other>(self) -> Result<Tendril<Other, A>, Self>
         where Other: fmt::Format,
     {
-        match Other::validate(self.as_byte_slice()) {
-            true => Ok(unsafe { mem::transmute(self) }),
-            false => Err(self),
+        if Other::validate(self.as_byte_slice()) {
+            Ok(unsafe { mem::transmute(self) })
+        } else {
+            Err(self)
         }
     }
 
@@ -704,12 +704,13 @@ impl<F, A> Tendril<F, A>
     /// format.
     #[inline]
     pub fn try_push_bytes(&mut self, buf: &[u8]) -> Result<(), ()> {
-        match F::validate(buf) {
-            true => unsafe {
+        if F::validate(buf) {
+            unsafe {
                 self.push_bytes_without_validating(buf);
                 Ok(())
-            },
-            false => Err(()),
+            }
+        } else {
+            Err(())
         }
     }
 
@@ -899,7 +900,7 @@ impl<F, A> Tendril<F, A>
         } else {
             self.make_owned_with_capacity(new_len);
             let (owned, _, _) = self.assume_buf();
-            let mut dest = owned.data_ptr().offset((owned.len as usize - drop_left) as isize);
+            let mut dest = owned.data_ptr().add(owned.len as usize - drop_left);
             copy_and_advance(&mut dest, unsafe_slice(&insert_bytes, 0, insert_len as usize));
             copy_and_advance(&mut dest, unsafe_slice(buf, drop_right, buf.len() - drop_right));
             self.len = new_len;
@@ -1002,15 +1003,19 @@ impl<F, A> Tendril<F, A>
         let ptr = self.ptr.get().get();
         let header = self.header();
         let shared = (ptr & 1) == 1;
-        let (cap, offset) = match shared {
-            true => ((*header).cap, self.aux.get()),
-            false => (self.aux.get(), 0),
+
+        let (cap, offset) = {
+            if shared {
+                ((*header).cap, self.aux.get())
+            } else {
+                (self.aux.get(), 0)
+            }
         };
 
         (Buf32 {
             ptr: header,
             len: offset + self.len32(),
-            cap: cap,
+            cap,
         }, shared, offset)
     }
 
@@ -1052,7 +1057,7 @@ impl<F, A> Tendril<F, A>
     unsafe fn shared(buf: Buf32<Header<A>>, off: u32, len: u32) -> Tendril<F, A> {
         Tendril {
             ptr: Cell::new(NonZeroUsize::new((buf.ptr as usize) | 1)),
-            len: len,
+            len,
             aux: Cell::new(off),
             marker: PhantomData,
             refcount_marker: PhantomData,
@@ -1060,7 +1065,7 @@ impl<F, A> Tendril<F, A>
     }
 
     #[inline]
-    fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
+    fn as_byte_slice(&self) -> &[u8] {
         unsafe {
             match self.ptr.get().get() {
                 EMPTY_TAG => &[],
@@ -1079,7 +1084,7 @@ impl<F, A> Tendril<F, A>
     // There's no need to worry about locking on an atomic Tendril, because it makes it unique as
     // soon as you do that.
     #[inline]
-    fn as_mut_byte_slice<'a>(&'a mut self) -> &'a mut [u8] {
+    fn as_mut_byte_slice(&mut self) -> &mut [u8] {
         unsafe {
             match self.ptr.get().get() {
                 EMPTY_TAG => &mut [],
@@ -1103,9 +1108,9 @@ impl<F, A> Tendril<F, A>
 {
     /// Build a `Tendril` by copying a slice.
     #[inline]
-    pub fn from_slice(x: &F::Slice) -> Tendril<F, A> {
+    pub fn from_slice(x: &F::Slice) -> Self {
         unsafe {
-            Tendril::from_byte_slice_without_validating(x.as_bytes())
+            Self::from_byte_slice_without_validating(x.as_bytes())
         }
     }
 
@@ -1141,7 +1146,7 @@ impl<F, A> From<Tendril<F, A>> for SendTendril<F>
           A: Atomicity,
 {
     #[inline]
-    fn from(tendril: Tendril<F, A>) -> SendTendril<F> {
+    fn from(tendril: Tendril<F, A>) -> Self {
         tendril.into_send()
     }
 }
@@ -1151,7 +1156,7 @@ impl<F, A> From<SendTendril<F>> for Tendril<F, A>
           A: Atomicity,
 {
     #[inline]
-    fn from(send: SendTendril<F>) -> Tendril<F, A> {
+    fn from(send: SendTendril<F>) -> Self {
         unsafe {
             mem::transmute(send.tendril)
         }
@@ -1183,7 +1188,7 @@ impl<F, A> Tendril<F, A>
 {
     /// Remove and return the first character, if any.
     #[inline]
-    pub fn pop_front_char<'a>(&'a mut self) -> Option<char> {
+    pub fn pop_front_char(&mut self) -> Option<char> {
         unsafe {
             let next_char; // first char in iterator
             let mut skip = 0;  // number of bytes to skip, or 0 to clear
@@ -1222,8 +1227,8 @@ impl<F, A> Tendril<F, A>
     ///
     /// Returns `None` on an empty string.
     #[inline]
-    pub fn pop_front_char_run<'a, C, R>(&'a mut self, mut classify: C)
-        -> Option<(Tendril<F, A>, R)>
+    pub fn pop_front_char_run<C, R>(&mut self, mut classify: C)
+        -> Option<(Self, R)>
         where C: FnMut(char) -> R,
               R: PartialEq,
     {
@@ -1234,7 +1239,7 @@ impl<F, A> Tendril<F, A>
             };
             let (_, first) = unwrap_or_return!(chars.next(), None);
             class = classify(first);
-            first_mismatch = chars.find(|&(_, ch)| &classify(ch) != &class);
+            first_mismatch = chars.find(|&(_, ch)| classify(ch) != class);
         }
 
         match first_mismatch {
@@ -1407,7 +1412,7 @@ impl<A> str::FromStr for Tendril<fmt::UTF8, A>
 
     #[inline]
     fn from_str(s: &str) -> Result<Self, ()> {
-        Ok(Tendril::from_slice(s))
+        Ok(Self::from_slice(s))
     }
 }
 
@@ -1474,8 +1479,8 @@ impl<A> Tendril<fmt::UTF8, A>
 
     /// Create a `Tendril` from a single character.
     #[inline]
-    pub fn from_char(c: char) -> Tendril<fmt::UTF8, A> {
-        let mut t: Tendril<fmt::UTF8, A> = Tendril::new();
+    pub fn from_char(c: char) -> Self {
+        let mut t: Self = Tendril::new();
         t.push_char(c);
         t
     }
@@ -1541,8 +1546,8 @@ impl<'a, A> From<&'a Tendril<fmt::UTF8, A>> for String
     where A: Atomicity,
 {
     #[inline]
-    fn from(input: &'a Tendril<fmt::UTF8, A>) -> String {
-        String::from(&**input)
+    fn from(input: &'a Tendril<fmt::UTF8, A>) -> Self {
+        Self::from(&**input)
     }
 }
 

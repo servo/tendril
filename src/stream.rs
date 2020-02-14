@@ -119,7 +119,7 @@ impl<Sink, A> Utf8LossyDecoder<Sink, A>
     #[inline]
     pub fn new(inner_sink: Sink) -> Self {
         Utf8LossyDecoder {
-            inner_sink: inner_sink,
+            inner_sink,
             incomplete: None,
             marker: PhantomData,
         }
@@ -316,23 +316,20 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for LossyDecoder<Sink, A>
     #[inline]
     fn process(&mut self, t: Tendril<fmt::Bytes, A>) {
         match self.inner {
-            LossyDecoderInner::Utf8(ref mut utf8) => return utf8.process(t),
+            LossyDecoderInner::Utf8(ref mut utf8) => utf8.process(t),
             #[cfg(feature = "encoding")]
             LossyDecoderInner::Encoding(ref mut decoder, ref mut sink) => {
                 let mut out = Tendril::new();
                 let mut t = t;
-                loop {
-                    match decoder.raw_feed(&*t, &mut out) {
-                        (_, Some(err)) => {
-                            out.push_char('\u{fffd}');
-                            sink.error(err.cause);
-                            debug_assert!(err.upto >= 0);
-                            t.pop_front(err.upto as u32);
-                            // continue loop and process remainder of t
-                        }
-                        (_, None) => break,
-                    }
+
+                while let (_, Some(err)) = decoder.raw_feed(&*t, &mut out) {
+                    out.push_char('\u{fffd}');
+                    sink.error(err.cause);
+                    debug_assert!(err.upto >= 0);
+                    t.pop_front(err.upto as u32);
+                    // continue loop and process remainder of t
                 }
+
                 if out.len() > 0 {
                     sink.process(out);
                 }
@@ -363,7 +360,7 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for LossyDecoder<Sink, A>
     #[inline]
     fn finish(self) -> Sink::Output {
         match self.inner {
-            LossyDecoderInner::Utf8(utf8) => return utf8.finish(),
+            LossyDecoderInner::Utf8(utf8) => utf8.finish(),
             #[cfg(feature = "encoding")]
             LossyDecoderInner::Encoding(mut decoder, mut sink) => {
                 let mut out = Tendril::new();
