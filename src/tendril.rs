@@ -488,8 +488,8 @@ impl<F, A> strfmt::Debug for Tendril<F, A>
             _ => "owned",
         };
 
-        try!(write!(f, "Tendril<{:?}>({}: ", <F as Default>::default(), kind));
-        try!(<<F as fmt::SliceFormat>::Slice as strfmt::Debug>::fmt(&**self, f));
+        write!(f, "Tendril<{:?}>({}: ", <F as Default>::default(), kind)?;
+        <<F as fmt::SliceFormat>::Slice as strfmt::Debug>::fmt(&**self, f)?;
         write!(f, ")")
     }
 }
