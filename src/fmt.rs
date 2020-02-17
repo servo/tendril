@@ -21,11 +21,8 @@
 
 use std::{char, str, mem};
 use std::default::Default;
-use std::io::Write;
 
 use futf::{self, Codepoint, Meaning};
-
-use util::unsafe_slice;
 
 /// Implementation details.
 ///
@@ -353,17 +350,8 @@ unsafe impl<'a> CharFormat<'a> for UTF8 {
     fn encode_char<F>(ch: char, cont: F) -> Result<(), ()>
         where F: FnOnce(&[u8])
     {
-        unsafe {
-            let mut utf_8: [u8; 4] = mem::uninitialized();
-            let bytes_written = {
-                let mut buffer = &mut utf_8[..];
-                write!(buffer, "{}", ch).ok().expect("Tendril: internal error");
-                debug_assert!(buffer.len() <= 4);
-                4 - buffer.len()
-            };
-            cont(unsafe_slice(&utf_8, 0, bytes_written));
-            Ok(())
-        }
+        cont(ch.encode_utf8(&mut [0_u8; 4]).as_bytes());
+        Ok(())
     }
 }
 
@@ -444,17 +432,13 @@ unsafe impl Format for WTF8 {
                     drop_left: 3,
                     drop_right: 3,
                     insert_len: 0,
-                    insert_bytes: mem::uninitialized(),
+                    insert_bytes: [0_u8; 4],
                 };
 
                 let n = 0x10000 + ((hi as u32) << 10) + (lo as u32);
 
-                fixup.insert_len = {
-                    let mut buffer = &mut fixup.insert_bytes[..];
-                    write!(buffer, "{}", char::from_u32(n).expect(ERR)).ok().expect(ERR);
-                    debug_assert!(buffer.len() <= 4);
-                    4 - buffer.len() as u32
-                };
+                let ch = char::from_u32(n).expect(ERR);
+                fixup.insert_len = ch.encode_utf8(&mut fixup.insert_bytes).len() as u32;
 
                 return fixup;
             }

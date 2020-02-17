@@ -12,7 +12,6 @@ use std::marker::PhantomData;
 use std::cell::Cell;
 use std::ops::{Deref, DerefMut};
 use std::iter::FromIterator;
-use std::io::Write;
 use std::default::Default;
 use std::cmp::Ordering;
 use std::fmt as strfmt;
@@ -146,7 +145,7 @@ impl<A> Header<A>
     unsafe fn new() -> Header<A> {
         Header {
             refcount: A::new(),
-            cap: mem::uninitialized(),
+            cap: 0,
         }
     }
 }
@@ -887,7 +886,7 @@ impl<F, A> Tendril<F, A>
         let drop_right = drop_right as usize;
 
         if new_len <= MAX_INLINE_LEN as u32 {
-            let mut tmp: [u8; MAX_INLINE_LEN] = mem::uninitialized();
+            let mut tmp = [0_u8; MAX_INLINE_LEN];
             {
                 let old = self.as_byte_slice();
                 let mut dest = tmp.as_mut_ptr();
@@ -1019,8 +1018,8 @@ impl<F, A> Tendril<F, A>
         let len = x.len();
         let mut t = Tendril {
             ptr: Cell::new(inline_tag(len as u32)),
-            len: mem::uninitialized(),
-            aux: mem::uninitialized(),
+            len: 0,
+            aux: Cell::new(0),
             marker: PhantomData,
             refcount_marker: PhantomData,
         };
@@ -1461,14 +1460,7 @@ impl<A> Tendril<fmt::UTF8, A>
     #[inline]
     pub fn push_char(&mut self, c: char) {
         unsafe {
-            let mut utf_8: [u8; 4] = mem::uninitialized();
-            let bytes_written = {
-                let mut buffer = &mut utf_8[..];
-                write!(buffer, "{}", c).ok().expect("Tendril::push_char: internal error");
-                debug_assert!(buffer.len() <= 4);
-                4 - buffer.len()
-            };
-            self.push_bytes_without_validating(unsafe_slice(&utf_8, 0, bytes_written));
+            self.push_bytes_without_validating(c.encode_utf8(&mut [0_u8; 4]).as_bytes());
         }
     }
 
