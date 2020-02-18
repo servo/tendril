@@ -15,6 +15,7 @@ use std::iter::FromIterator;
 use std::default::Default;
 use std::cmp::Ordering;
 use std::fmt as strfmt;
+use std::num::NonZeroUsize;
 
 #[cfg(feature = "encoding")] use encoding::{self, EncodingRef, DecoderTrap, EncoderTrap};
 
@@ -22,8 +23,7 @@ use std::fmt as strfmt;
 use buf32::{self, Buf32};
 use fmt::{self, Slice};
 use fmt::imp::Fixup;
-use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut, copy_lifetime,
-           NonZeroUsize};
+use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut, copy_lifetime};
 use OFLOW;
 
 const MAX_INLINE_LEN: usize = 8;
@@ -34,7 +34,7 @@ const EMPTY_TAG: usize = 0xF;
 fn inline_tag(len: u32) -> NonZeroUsize {
     debug_assert!(len <= MAX_INLINE_LEN as u32);
     unsafe {
-        NonZeroUsize::new(if len == 0 {
+        NonZeroUsize::new_unchecked(if len == 0 {
             EMPTY_TAG
         } else {
             len as usize
@@ -584,7 +584,7 @@ impl<F, A> Tendril<F, A>
     #[inline]
     pub fn clear(&mut self) {
         if self.ptr.get().get() <= MAX_INLINE_TAG {
-            self.ptr.set(unsafe { NonZeroUsize::new(EMPTY_TAG) });
+            self.ptr.set(unsafe { NonZeroUsize::new_unchecked(EMPTY_TAG) });
         } else {
             let (_, shared, _) = unsafe { self.assume_buf() };
             if shared {
@@ -964,7 +964,7 @@ impl<F, A> Tendril<F, A>
             let header = p as *mut Header<A>;
             (*header).cap = self.aux.get();
 
-            self.ptr.set(NonZeroUsize::new(p | 1));
+            self.ptr.set(NonZeroUsize::new_unchecked(p | 1));
             self.aux.set(0);
         }
     }
@@ -987,7 +987,7 @@ impl<F, A> Tendril<F, A>
         self.make_owned();
         let mut buf = self.assume_buf().0;
         buf.grow(cap);
-        self.ptr.set(NonZeroUsize::new(buf.ptr as usize));
+        self.ptr.set(NonZeroUsize::new_unchecked(buf.ptr as usize));
         self.aux.set(buf.cap);
     }
 
@@ -1030,7 +1030,7 @@ impl<F, A> Tendril<F, A>
     #[inline]
     unsafe fn owned(x: Buf32<Header<A>>) -> Tendril<F, A> {
         Tendril {
-            ptr: Cell::new(NonZeroUsize::new(x.ptr as usize)),
+            ptr: Cell::new(NonZeroUsize::new_unchecked(x.ptr as usize)),
             len: x.len,
             aux: Cell::new(x.cap),
             marker: PhantomData,
@@ -1050,7 +1050,7 @@ impl<F, A> Tendril<F, A>
     #[inline]
     unsafe fn shared(buf: Buf32<Header<A>>, off: u32, len: u32) -> Tendril<F, A> {
         Tendril {
-            ptr: Cell::new(NonZeroUsize::new((buf.ptr as usize) | 1)),
+            ptr: Cell::new(NonZeroUsize::new_unchecked((buf.ptr as usize) | 1)),
             len: len,
             aux: Cell::new(off),
             marker: PhantomData,
