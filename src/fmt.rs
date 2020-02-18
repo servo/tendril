@@ -19,8 +19,8 @@
 //! the format sneaks in. For that reason, these traits require
 //! `unsafe impl`.
 
-use std::{char, str, mem};
 use std::default::Default;
+use std::{char, mem, str};
 
 use futf::{self, Codepoint, Meaning};
 
@@ -29,8 +29,8 @@ use futf::{self, Codepoint, Meaning};
 /// You don't need these unless you are implementing
 /// a new format.
 pub mod imp {
-    use std::{iter, slice, mem};
     use std::default::Default;
+    use std::{iter, mem, slice};
 
     /// Describes how to fix up encodings when concatenating.
     ///
@@ -69,9 +69,9 @@ pub mod imp {
 
         #[inline]
         fn next(&mut self) -> Option<(usize, char)> {
-            self.inner.next().map(|(i, &b)| unsafe {
-                (i, from_u32_unchecked(b as u32))
-            })
+            self.inner
+                .next()
+                .map(|(i, &b)| unsafe { (i, from_u32_unchecked(b as u32)) })
         }
     }
 
@@ -137,7 +137,8 @@ pub unsafe trait Format {
 /// The subset format can be converted to the superset format
 /// for free.
 pub unsafe trait SubsetOf<Super>: Format
-    where Super: Format,
+where
+    Super: Format,
 {
     /// Validate the *other* direction of conversion; check if
     /// this buffer from the superset format conforms to the
@@ -161,7 +162,7 @@ pub unsafe trait SliceFormat: Format + Sized {
 /// (all of it, or some proper subset).
 pub unsafe trait CharFormat<'a>: Format {
     /// Iterator for characters and their byte indices.
-    type Iter: Iterator<Item=(usize, char)>;
+    type Iter: Iterator<Item = (usize, char)>;
 
     /// Iterate over the characters of the string and their byte
     /// indices.
@@ -173,7 +174,8 @@ pub unsafe trait CharFormat<'a>: Format {
     ///
     /// Returns `Err(())` iff the character cannot be represented.
     fn encode_char<F>(ch: char, cont: F) -> Result<(), ()>
-        where F: FnOnce(&[u8]);
+    where
+        F: FnOnce(&[u8]);
 }
 
 /// Indicates a Rust slice type that is represented in memory as bytes.
@@ -254,8 +256,8 @@ unsafe impl Format for ASCII {
     }
 }
 
-unsafe impl SubsetOf<UTF8> for ASCII { }
-unsafe impl SubsetOf<Latin1> for ASCII { }
+unsafe impl SubsetOf<UTF8> for ASCII {}
+unsafe impl SubsetOf<Latin1> for ASCII {}
 
 unsafe impl<'a> CharFormat<'a> for ASCII {
     type Iter = imp::SingleByteCharIndices<'a>;
@@ -267,10 +269,13 @@ unsafe impl<'a> CharFormat<'a> for ASCII {
 
     #[inline]
     fn encode_char<F>(ch: char, cont: F) -> Result<(), ()>
-        where F: FnOnce(&[u8])
+    where
+        F: FnOnce(&[u8]),
     {
         let n = ch as u32;
-        if n > 0x7F { return Err(()); }
+        if n > 0x7F {
+            return Err(());
+        }
         cont(&[n as u8]);
         Ok(())
     }
@@ -292,7 +297,10 @@ unsafe impl Format for UTF8 {
             return true;
         }
         match futf::classify(buf, buf.len() - 1) {
-            Some(Codepoint { meaning: Meaning::Whole(_), .. }) => true,
+            Some(Codepoint {
+                meaning: Meaning::Whole(_),
+                ..
+            }) => true,
             _ => false,
         }
     }
@@ -303,19 +311,21 @@ unsafe impl Format for UTF8 {
             return true;
         }
         match futf::classify(buf, 0) {
-            Some(Codepoint { meaning: Meaning::Whole(_), .. }) => true,
+            Some(Codepoint {
+                meaning: Meaning::Whole(_),
+                ..
+            }) => true,
             _ => false,
         }
     }
 
     #[inline]
     fn validate_subseq(buf: &[u8]) -> bool {
-        <Self as Format>::validate_prefix(buf)
-            && <Self as Format>::validate_suffix(buf)
+        <Self as Format>::validate_prefix(buf) && <Self as Format>::validate_suffix(buf)
     }
 }
 
-unsafe impl SubsetOf<WTF8> for UTF8 { }
+unsafe impl SubsetOf<WTF8> for UTF8 {}
 
 unsafe impl SliceFormat for UTF8 {
     type Slice = str;
@@ -348,7 +358,8 @@ unsafe impl<'a> CharFormat<'a> for UTF8 {
 
     #[inline]
     fn encode_char<F>(ch: char, cont: F) -> Result<(), ()>
-        where F: FnOnce(&[u8])
+    where
+        F: FnOnce(&[u8]),
     {
         cont(ch.encode_utf8(&mut [0_u8; 4]).as_bytes());
         Ok(())
@@ -364,8 +375,7 @@ pub struct WTF8;
 #[inline]
 fn wtf8_meaningful(m: Meaning) -> bool {
     match m {
-        Meaning::Whole(_) | Meaning::LeadSurrogate(_)
-            | Meaning::TrailSurrogate(_) => true,
+        Meaning::Whole(_) | Meaning::LeadSurrogate(_) | Meaning::TrailSurrogate(_) => true,
         _ => false,
     }
 }
@@ -415,8 +425,7 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     fn validate_subseq(buf: &[u8]) -> bool {
-        <Self as Format>::validate_prefix(buf)
-            && <Self as Format>::validate_suffix(buf)
+        <Self as Format>::validate_prefix(buf) && <Self as Format>::validate_suffix(buf)
     }
 
     #[inline]
@@ -424,9 +433,16 @@ unsafe impl Format for WTF8 {
         const ERR: &'static str = "WTF8: internal error";
 
         if lhs.len() >= 3 && rhs.len() >= 3 {
-            if let (Some(Codepoint { meaning: Meaning::LeadSurrogate(hi), .. }),
-                    Some(Codepoint { meaning: Meaning::TrailSurrogate(lo), .. }))
-                = (futf::classify(lhs, lhs.len() - 1), futf::classify(rhs, 0))
+            if let (
+                Some(Codepoint {
+                    meaning: Meaning::LeadSurrogate(hi),
+                    ..
+                }),
+                Some(Codepoint {
+                    meaning: Meaning::TrailSurrogate(lo),
+                    ..
+                }),
+            ) = (futf::classify(lhs, lhs.len() - 1), futf::classify(rhs, 0))
             {
                 let mut fixup = imp::Fixup {
                     drop_left: 3,
@@ -490,10 +506,13 @@ unsafe impl<'a> CharFormat<'a> for Latin1 {
 
     #[inline]
     fn encode_char<F>(ch: char, cont: F) -> Result<(), ()>
-        where F: FnOnce(&[u8])
+    where
+        F: FnOnce(&[u8]),
     {
         let n = ch as u32;
-        if n > 0xFF { return Err(()); }
+        if n > 0xFF {
+            return Err(());
+        }
         cont(&[n as u8]);
         Ok(())
     }

@@ -6,8 +6,8 @@
 
 //! Streams of tendrils.
 
-use tendril::{Tendril, Atomicity, NonAtomic};
 use fmt;
+use tendril::{Atomicity, NonAtomic, Tendril};
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -15,8 +15,10 @@ use std::io;
 use std::marker::PhantomData;
 use std::path::Path;
 
-#[cfg(feature = "encoding")] use encoding;
-#[cfg(feature = "encoding_rs")] use encoding_rs::{self, DecoderResult};
+#[cfg(feature = "encoding")]
+use encoding;
+#[cfg(feature = "encoding_rs")]
+use encoding_rs::{self, DecoderResult};
 use utf8;
 
 /// Trait for types that can process a tendril.
@@ -27,9 +29,10 @@ use utf8;
 /// architecture.
 ///
 /// [html5ever]: https://github.com/servo/html5ever
-pub trait TendrilSink<F, A=NonAtomic>
-    where F: fmt::Format,
-          A: Atomicity,
+pub trait TendrilSink<F, A = NonAtomic>
+where
+    F: fmt::Format,
+    A: Atomicity,
 {
     /// Process this tendril.
     fn process(&mut self, t: Tendril<F, A>);
@@ -44,14 +47,22 @@ pub trait TendrilSink<F, A=NonAtomic>
     fn finish(self) -> Self::Output;
 
     /// Process one tendril and finish.
-    fn one<T>(mut self, t: T) -> Self::Output where Self: Sized, T: Into<Tendril<F, A>> {
+    fn one<T>(mut self, t: T) -> Self::Output
+    where
+        Self: Sized,
+        T: Into<Tendril<F, A>>,
+    {
         self.process(t.into());
         self.finish()
     }
 
     /// Consume an iterator of tendrils, processing each item, then finish.
     fn from_iter<I>(mut self, i: I) -> Self::Output
-    where Self: Sized, I: IntoIterator, I::Item: Into<Tendril<F, A>> {
+    where
+        Self: Sized,
+        I: IntoIterator,
+        I::Item: Into<Tendril<F, A>>,
+    {
         for t in i {
             self.process(t.into())
         }
@@ -61,7 +72,11 @@ pub trait TendrilSink<F, A=NonAtomic>
     /// Read from the given stream of bytes until exhaustion and process incrementally,
     /// then finish. Return `Err` at the first I/O error.
     fn read_from<R>(mut self, r: &mut R) -> io::Result<Self::Output>
-    where Self: Sized, R: io::Read, F: fmt::SliceFormat<Slice=[u8]> {
+    where
+        Self: Sized,
+        R: io::Read,
+        F: fmt::SliceFormat<Slice = [u8]>,
+    {
         const BUFFER_SIZE: u32 = 4 * 1024;
         loop {
             let mut tendril = Tendril::<F, A>::new();
@@ -78,20 +93,23 @@ pub trait TendrilSink<F, A=NonAtomic>
                     Ok(n) => {
                         tendril.pop_back(BUFFER_SIZE - n as u32);
                         self.process(tendril);
-                        break
+                        break;
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
-                    Err(e) => return Err(e)
+                    Err(e) => return Err(e),
                 }
             }
         }
     }
 
-
     /// Read from the file at the given path and process incrementally,
     /// then finish. Return `Err` at the first I/O error.
     fn from_file<P>(self, path: P) -> io::Result<Self::Output>
-    where Self: Sized, P: AsRef<Path>, F: fmt::SliceFormat<Slice=[u8]> {
+    where
+        Self: Sized,
+        P: AsRef<Path>,
+        F: fmt::SliceFormat<Slice = [u8]>,
+    {
         self.read_from(&mut File::open(path)?)
     }
 }
@@ -102,9 +120,10 @@ pub trait TendrilSink<F, A=NonAtomic>
 ///
 /// This does not allocate memory: the output is either subtendrils on the input,
 /// on inline tendrils for a single code point.
-pub struct Utf8LossyDecoder<Sink, A=NonAtomic>
-    where Sink: TendrilSink<fmt::UTF8, A>,
-          A: Atomicity
+pub struct Utf8LossyDecoder<Sink, A = NonAtomic>
+where
+    Sink: TendrilSink<fmt::UTF8, A>,
+    A: Atomicity,
 {
     pub inner_sink: Sink,
     incomplete: Option<utf8::Incomplete>,
@@ -112,8 +131,9 @@ pub struct Utf8LossyDecoder<Sink, A=NonAtomic>
 }
 
 impl<Sink, A> Utf8LossyDecoder<Sink, A>
-    where Sink: TendrilSink<fmt::UTF8, A>,
-          A: Atomicity,
+where
+    Sink: TendrilSink<fmt::UTF8, A>,
+    A: Atomicity,
 {
     /// Create a new incremental UTF-8 decoder.
     #[inline]
@@ -127,8 +147,9 @@ impl<Sink, A> Utf8LossyDecoder<Sink, A>
 }
 
 impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
-    where Sink: TendrilSink<fmt::UTF8, A>,
-          A: Atomicity,
+where
+    Sink: TendrilSink<fmt::UTF8, A>,
+    A: Atomicity,
 {
     #[inline]
     fn process(&mut self, mut t: Tendril<fmt::Bytes, A>) {
@@ -136,12 +157,11 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
         if let Some(mut incomplete) = self.incomplete.take() {
             let resume_at = incomplete.try_complete(&t).map(|(result, rest)| {
                 match result {
-                    Ok(s) => {
-                        self.inner_sink.process(Tendril::from_slice(s))
-                    }
+                    Ok(s) => self.inner_sink.process(Tendril::from_slice(s)),
                     Err(_) => {
                         self.inner_sink.error("invalid byte sequence".into());
-                        self.inner_sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
+                        self.inner_sink
+                            .process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
                     }
                 }
                 t.len() - rest.len()
@@ -149,11 +169,9 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
             match resume_at {
                 None => {
                     self.incomplete = Some(incomplete);
-                    return
+                    return;
                 }
-                Some(resume_at) => {
-                    t.pop_front(resume_at as u32)
-                }
+                Some(resume_at) => t.pop_front(resume_at as u32),
             }
         }
         while !t.is_empty() {
@@ -163,12 +181,22 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
                     debug_assert!(s.len() == t.len());
                     Ok(())
                 }
-                Err(utf8::DecodeError::Invalid { valid_prefix, invalid_sequence, .. }) => {
+                Err(utf8::DecodeError::Invalid {
+                    valid_prefix,
+                    invalid_sequence,
+                    ..
+                }) => {
                     debug_assert!(valid_prefix.as_ptr() == t.as_ptr());
                     debug_assert!(valid_prefix.len() <= t.len());
-                    Err((valid_prefix.len(), Err(valid_prefix.len() + invalid_sequence.len())))
+                    Err((
+                        valid_prefix.len(),
+                        Err(valid_prefix.len() + invalid_sequence.len()),
+                    ))
                 }
-                Err(utf8::DecodeError::Incomplete { valid_prefix, incomplete_suffix }) => {
+                Err(utf8::DecodeError::Incomplete {
+                    valid_prefix,
+                    incomplete_suffix,
+                }) => {
                     debug_assert!(valid_prefix.as_ptr() == t.as_ptr());
                     debug_assert!(valid_prefix.len() <= t.len());
                     Err((valid_prefix.len(), Ok(incomplete_suffix)))
@@ -176,26 +204,26 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
             };
             match unborrowed_result {
                 Ok(()) => {
-                    unsafe {
-                        self.inner_sink.process(t.reinterpret_without_validating())
-                    }
-                    return
+                    unsafe { self.inner_sink.process(t.reinterpret_without_validating()) }
+                    return;
                 }
                 Err((valid_len, and_then)) => {
                     if valid_len > 0 {
                         let subtendril = t.subtendril(0, valid_len as u32);
                         unsafe {
-                            self.inner_sink.process(subtendril.reinterpret_without_validating())
+                            self.inner_sink
+                                .process(subtendril.reinterpret_without_validating())
                         }
                     }
                     match and_then {
                         Ok(incomplete) => {
                             self.incomplete = Some(incomplete);
-                            return
+                            return;
                         }
                         Err(offset) => {
                             self.inner_sink.error("invalid byte sequence".into());
-                            self.inner_sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
+                            self.inner_sink
+                                .process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
                             t.pop_front(offset as u32);
                         }
                     }
@@ -214,8 +242,10 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
     #[inline]
     fn finish(mut self) -> Sink::Output {
         if self.incomplete.is_some() {
-            self.inner_sink.error("incomplete byte sequence at end of stream".into());
-            self.inner_sink.process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
+            self.inner_sink
+                .error("incomplete byte sequence at end of stream".into());
+            self.inner_sink
+                .process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
         }
         self.inner_sink.finish()
     }
@@ -227,16 +257,20 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for Utf8LossyDecoder<Sink, A>
 ///
 /// This allocates new tendrils for encodings other than UTF-8.
 #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
-pub struct LossyDecoder<Sink, A=NonAtomic>
-    where Sink: TendrilSink<fmt::UTF8, A>,
-          A: Atomicity {
+pub struct LossyDecoder<Sink, A = NonAtomic>
+where
+    Sink: TendrilSink<fmt::UTF8, A>,
+    A: Atomicity,
+{
     inner: LossyDecoderInner<Sink, A>,
 }
 
 #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
 enum LossyDecoderInner<Sink, A>
-    where Sink: TendrilSink<fmt::UTF8, A>,
-          A: Atomicity {
+where
+    Sink: TendrilSink<fmt::UTF8, A>,
+    A: Atomicity,
+{
     Utf8(Utf8LossyDecoder<Sink, A>),
     #[cfg(feature = "encoding")]
     Encoding(Box<encoding::RawDecoder>, Sink),
@@ -246,8 +280,9 @@ enum LossyDecoderInner<Sink, A>
 
 #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
 impl<Sink, A> LossyDecoder<Sink, A>
-    where Sink: TendrilSink<fmt::UTF8, A>,
-          A: Atomicity,
+where
+    Sink: TendrilSink<fmt::UTF8, A>,
+    A: Atomicity,
 {
     /// Create a new incremental decoder using the encoding crate.
     #[cfg(feature = "encoding")]
@@ -257,7 +292,7 @@ impl<Sink, A> LossyDecoder<Sink, A>
             LossyDecoder::utf8(sink)
         } else {
             LossyDecoder {
-                inner: LossyDecoderInner::Encoding(encoding.raw_decoder(), sink)
+                inner: LossyDecoderInner::Encoding(encoding.raw_decoder(), sink),
             }
         }
     }
@@ -270,7 +305,7 @@ impl<Sink, A> LossyDecoder<Sink, A>
             return Self::utf8(sink);
         }
         Self {
-            inner: LossyDecoderInner::EncodingRs(encoding.new_decoder(), sink)
+            inner: LossyDecoderInner::EncodingRs(encoding.new_decoder(), sink),
         }
     }
 
@@ -281,7 +316,7 @@ impl<Sink, A> LossyDecoder<Sink, A>
     #[inline]
     pub fn utf8(sink: Sink) -> LossyDecoder<Sink, A> {
         LossyDecoder {
-            inner: LossyDecoderInner::Utf8(Utf8LossyDecoder::new(sink))
+            inner: LossyDecoderInner::Utf8(Utf8LossyDecoder::new(sink)),
         }
     }
 
@@ -310,8 +345,9 @@ impl<Sink, A> LossyDecoder<Sink, A>
 
 #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
 impl<Sink, A> TendrilSink<fmt::Bytes, A> for LossyDecoder<Sink, A>
-    where Sink: TendrilSink<fmt::UTF8, A>,
-          A: Atomicity,
+where
+    Sink: TendrilSink<fmt::UTF8, A>,
+    A: Atomicity,
 {
     #[inline]
     fn process(&mut self, t: Tendril<fmt::Bytes, A>) {
@@ -336,14 +372,14 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for LossyDecoder<Sink, A>
                 if out.len() > 0 {
                     sink.process(out);
                 }
-            },
+            }
             #[cfg(feature = "encoding_rs")]
             LossyDecoderInner::EncodingRs(ref mut decoder, ref mut sink) => {
                 if t.is_empty() {
                     return;
                 }
                 decode_to_sink(t, decoder, sink, false);
-            },
+            }
         }
     }
 
@@ -375,7 +411,7 @@ impl<Sink, A> TendrilSink<fmt::Bytes, A> for LossyDecoder<Sink, A>
                     sink.process(out);
                 }
                 sink.finish()
-            },
+            }
             #[cfg(feature = "encoding_rs")]
             LossyDecoderInner::EncodingRs(mut decoder, mut sink) => {
                 decode_to_sink(Tendril::new(), &mut decoder, &mut sink, true);
@@ -391,8 +427,7 @@ fn decode_to_sink<Sink, A>(
     decoder: &mut encoding_rs::Decoder,
     sink: &mut Sink,
     last: bool,
-)
-where
+) where
     Sink: TendrilSink<fmt::UTF8, A>,
     A: Atomicity,
 {
@@ -408,18 +443,17 @@ where
             decoder.decode_to_utf8_without_replacement(&t, &mut out, last);
         if bytes_written > 0 {
             sink.process(unsafe {
-                out
-                    .subtendril(0, bytes_written as u32)
+                out.subtendril(0, bytes_written as u32)
                     .reinterpret_without_validating()
             });
         }
         match result {
             DecoderResult::InputEmpty => return,
-            DecoderResult::OutputFull => {},
+            DecoderResult::OutputFull => {}
             DecoderResult::Malformed(_, _) => {
                 sink.error(Cow::Borrowed("invalid sequence"));
                 sink.process("\u{FFFD}".into());
-            },
+            }
         }
         t.pop_front(bytes_read as u32);
         if t.is_empty() {
@@ -431,27 +465,31 @@ where
 #[cfg(test)]
 mod test {
     use super::{TendrilSink, Utf8LossyDecoder};
-    use tendril::{Tendril, Atomicity, NonAtomic};
     use fmt;
     use std::borrow::Cow;
+    use tendril::{Atomicity, NonAtomic, Tendril};
 
     #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
     use super::LossyDecoder;
     #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
     use tendril::SliceExt;
 
-    #[cfg(feature = "encoding")] use encoding::all as enc;
-    #[cfg(feature = "encoding_rs")] use encoding_rs as enc_rs;
+    #[cfg(feature = "encoding")]
+    use encoding::all as enc;
+    #[cfg(feature = "encoding_rs")]
+    use encoding_rs as enc_rs;
 
     struct Accumulate<A>
-        where A: Atomicity,
+    where
+        A: Atomicity,
     {
         tendrils: Vec<Tendril<fmt::UTF8, A>>,
         errors: Vec<String>,
     }
 
     impl<A> Accumulate<A>
-        where A: Atomicity,
+    where
+        A: Atomicity,
     {
         fn new() -> Accumulate<A> {
             Accumulate {
@@ -462,7 +500,8 @@ mod test {
     }
 
     impl<A> TendrilSink<fmt::UTF8, A> for Accumulate<A>
-        where A: Atomicity,
+    where
+        A: Atomicity,
     {
         fn process(&mut self, t: Tendril<fmt::UTF8, A>) {
             self.tendrils.push(t);
@@ -482,7 +521,10 @@ mod test {
     fn check_utf8(input: &[&[u8]], expected: &[&str], errs: usize) {
         let decoder = Utf8LossyDecoder::new(Accumulate::<NonAtomic>::new());
         let (tendrils, errors) = decoder.from_iter(input.iter().cloned());
-        assert_eq!(expected, &*tendrils.iter().map(|t| &**t).collect::<Vec<_>>());
+        assert_eq!(
+            expected,
+            &*tendrils.iter().map(|t| &**t).collect::<Vec<_>>()
+        );
         assert_eq!(errs, errors.len());
     }
 
@@ -496,21 +538,45 @@ mod test {
         check_utf8(&[b"xy\xEA\x99\xAEzw"], &["xy\u{a66e}zw"], 0);
         check_utf8(&[b"xy\xEA", b"\x99\xAEzw"], &["xy", "\u{a66e}z", "w"], 0);
         check_utf8(&[b"xy\xEA\x99", b"\xAEzw"], &["xy", "\u{a66e}z", "w"], 0);
-        check_utf8(&[b"xy\xEA", b"\x99", b"\xAEzw"], &["xy", "\u{a66e}z", "w"], 0);
+        check_utf8(
+            &[b"xy\xEA", b"\x99", b"\xAEzw"],
+            &["xy", "\u{a66e}z", "w"],
+            0,
+        );
         check_utf8(&[b"\xEA", b"", b"\x99", b"", b"\xAE"], &["\u{a66e}"], 0);
-        check_utf8(&[b"", b"\xEA", b"", b"\x99", b"", b"\xAE", b""], &["\u{a66e}"], 0);
+        check_utf8(
+            &[b"", b"\xEA", b"", b"\x99", b"", b"\xAE", b""],
+            &["\u{a66e}"],
+            0,
+        );
 
-        check_utf8(&[b"xy\xEA", b"\xFF", b"\x99\xAEz"],
-            &["xy", "\u{fffd}", "\u{fffd}", "\u{fffd}", "\u{fffd}", "z"], 4);
-        check_utf8(&[b"xy\xEA\x99", b"\xFFz"],
-            &["xy", "\u{fffd}", "\u{fffd}", "z"], 2);
+        check_utf8(
+            &[b"xy\xEA", b"\xFF", b"\x99\xAEz"],
+            &["xy", "\u{fffd}", "\u{fffd}", "\u{fffd}", "\u{fffd}", "z"],
+            4,
+        );
+        check_utf8(
+            &[b"xy\xEA\x99", b"\xFFz"],
+            &["xy", "\u{fffd}", "\u{fffd}", "z"],
+            2,
+        );
 
         check_utf8(&[b"\xC5\x91\xC5\x91\xC5\x91"], &["őőő"], 0);
-        check_utf8(&[b"\xC5\x91", b"\xC5\x91", b"\xC5\x91"], &["ő", "ő", "ő"], 0);
-        check_utf8(&[b"\xC5", b"\x91\xC5", b"\x91\xC5", b"\x91"],
-            &["ő", "ő", "ő"], 0);
-        check_utf8(&[b"\xC5", b"\x91\xff", b"\x91\xC5", b"\x91"],
-            &["ő", "\u{fffd}", "\u{fffd}", "ő"], 2);
+        check_utf8(
+            &[b"\xC5\x91", b"\xC5\x91", b"\xC5\x91"],
+            &["ő", "ő", "ő"],
+            0,
+        );
+        check_utf8(
+            &[b"\xC5", b"\x91\xC5", b"\x91\xC5", b"\x91"],
+            &["ő", "ő", "ő"],
+            0,
+        );
+        check_utf8(
+            &[b"\xC5", b"\x91\xff", b"\x91\xC5", b"\x91"],
+            &["ő", "\u{fffd}", "\u{fffd}", "ő"],
+            2,
+        );
 
         // incomplete char at end of input
         check_utf8(&[b"\xC0"], &["\u{fffd}"], 1);
@@ -546,7 +612,6 @@ mod test {
         (&[b"xyz"], "xyz", 0),
         (&[b"xy", b"", b"", b"z"], "xyz", 0),
         (&[b"x", b"y", b"z"], "xyz", 0),
-
         (&[b"\xFF"], "\u{fffd}", 1),
         (&[b"x\xC0yz"], "x\u{fffd}yz", 1),
         (&[b"x", b"\xC0y", b"z"], "x\u{fffd}yz", 1),
@@ -568,18 +633,23 @@ mod test {
         (&[b""], "", 0),
         (&[b"xyz"], "xyz", 0),
         (&[b"x", b"y", b"z"], "xyz", 0),
-
         (&[b"\xEA\x99\xAE"], "\u{a66e}", 0),
         (&[b"\xEA", b"\x99\xAE"], "\u{a66e}", 0),
         (&[b"\xEA\x99", b"\xAE"], "\u{a66e}", 0),
         (&[b"\xEA", b"\x99", b"\xAE"], "\u{a66e}", 0),
         (&[b"\xEA", b"", b"\x99", b"", b"\xAE"], "\u{a66e}", 0),
-        (&[b"", b"\xEA", b"", b"\x99", b"", b"\xAE", b""], "\u{a66e}", 0),
-
+        (
+            &[b"", b"\xEA", b"", b"\x99", b"", b"\xAE", b""],
+            "\u{a66e}",
+            0,
+        ),
         (&[b"xy\xEA", b"\x99\xAEz"], "xy\u{a66e}z", 0),
-        (&[b"xy\xEA", b"\xFF", b"\x99\xAEz"], "xy\u{fffd}\u{fffd}\u{fffd}\u{fffd}z", 4),
+        (
+            &[b"xy\xEA", b"\xFF", b"\x99\xAEz"],
+            "xy\u{fffd}\u{fffd}\u{fffd}\u{fffd}z",
+            4,
+        ),
         (&[b"xy\xEA\x99", b"\xFFz"], "xy\u{fffd}\u{fffd}z", 2),
-
         // incomplete char at end of input
         (&[b"\xC0"], "\u{fffd}", 1),
         (&[b"\xEA\x99"], "\u{fffd}", 1),
@@ -608,7 +678,11 @@ mod test {
         (&[b"\xfc\xce\xc5\xd2\xc7\xc9\xd1"], "Энергия", 0),
         (&[b"\xfc\xce", b"\xc5\xd2\xc7\xc9\xd1"], "Энергия", 0),
         (&[b"\xfc\xce", b"\xc5\xd2\xc7", b"\xc9\xd1"], "Энергия", 0),
-        (&[b"\xfc\xce", b"", b"\xc5\xd2\xc7", b"\xc9\xd1", b""], "Энергия", 0),
+        (
+            &[b"\xfc\xce", b"", b"\xc5\xd2\xc7", b"\xc9\xd1", b""],
+            "Энергия",
+            0,
+        ),
     ];
 
     #[cfg(feature = "encoding")]
@@ -636,9 +710,12 @@ mod test {
         (&[b"\xbe\xc8\xb3\xe7"], "안녕", 0),
         (&[b"\xbe", b"\xc8\xb3\xe7"], "안녕", 0),
         (&[b"\xbe", b"", b"\xc8\xb3\xe7"], "안녕", 0),
-        (&[b"\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\xbf\xe4"], "안녕하세요", 0),
+        (
+            &[b"\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\xbf\xe4"],
+            "안녕하세요",
+            0,
+        ),
         (&[b"\xbe\xc8\xb3\xe7\xc7"], "안녕\u{fffd}", 1),
-
         (&[b"\xbe", b"", b"\xc8\xb3"], "안\u{fffd}", 1),
         (&[b"\xbe\x28\xb3\xe7"], "\u{fffd}(녕", 1),
     ];
@@ -666,8 +743,10 @@ mod test {
         let decoder = Utf8LossyDecoder::new(Accumulate::<NonAtomic>::new());
         let mut bytes: &[u8] = b"foo\xffbar";
         let (tendrils, errors) = decoder.read_from(&mut bytes).unwrap();
-        assert_eq!(&*tendrils.iter().map(|t| &**t).collect::<Vec<_>>(),
-                   &["foo", "\u{FFFD}", "bar"]);
+        assert_eq!(
+            &*tendrils.iter().map(|t| &**t).collect::<Vec<_>>(),
+            &["foo", "\u{FFFD}", "bar"]
+        );
         assert_eq!(errors, &["invalid byte sequence"]);
     }
 }

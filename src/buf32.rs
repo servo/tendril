@@ -6,7 +6,7 @@
 
 //! Provides an unsafe owned buffer type, used in implementing `Tendril`.
 
-use std::{mem, ptr, u32, slice};
+use std::{mem, ptr, slice, u32};
 
 use OFLOW;
 
@@ -52,7 +52,11 @@ impl<H> Buf32<H> {
 
     #[inline]
     pub unsafe fn destroy(self) {
-        mem::drop(Vec::from_raw_parts(self.ptr, 1, bytes_to_vec_capacity::<H>(self.cap)));
+        mem::drop(Vec::from_raw_parts(
+            self.ptr,
+            1,
+            bytes_to_vec_capacity::<H>(self.cap),
+        ));
     }
 
     #[inline(always)]

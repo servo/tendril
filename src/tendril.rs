@@ -4,26 +4,26 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::{ptr, mem, hash, str, u32, io, slice};
-use std::sync::atomic::{self, AtomicUsize};
-use std::sync::atomic::Ordering as AtomicOrdering;
 use std::borrow::Borrow;
-use std::marker::PhantomData;
 use std::cell::Cell;
-use std::ops::{Deref, DerefMut};
-use std::iter::FromIterator;
-use std::default::Default;
 use std::cmp::Ordering;
+use std::default::Default;
 use std::fmt as strfmt;
+use std::iter::FromIterator;
+use std::marker::PhantomData;
 use std::num::NonZeroUsize;
+use std::ops::{Deref, DerefMut};
+use std::sync::atomic::Ordering as AtomicOrdering;
+use std::sync::atomic::{self, AtomicUsize};
+use std::{hash, io, mem, ptr, slice, str, u32};
 
-#[cfg(feature = "encoding")] use encoding::{self, EncodingRef, DecoderTrap, EncoderTrap};
-
+#[cfg(feature = "encoding")]
+use encoding::{self, DecoderTrap, EncoderTrap, EncodingRef};
 
 use buf32::{self, Buf32};
-use fmt::{self, Slice};
 use fmt::imp::Fixup;
-use util::{unsafe_slice, unsafe_slice_mut, copy_and_advance, copy_lifetime_mut, copy_lifetime};
+use fmt::{self, Slice};
+use util::{copy_and_advance, copy_lifetime, copy_lifetime_mut, unsafe_slice, unsafe_slice_mut};
 use OFLOW;
 
 const MAX_INLINE_LEN: usize = 8;
@@ -33,13 +33,7 @@ const EMPTY_TAG: usize = 0xF;
 #[inline(always)]
 fn inline_tag(len: u32) -> NonZeroUsize {
     debug_assert!(len <= MAX_INLINE_LEN as u32);
-    unsafe {
-        NonZeroUsize::new_unchecked(if len == 0 {
-            EMPTY_TAG
-        } else {
-            len as usize
-        })
-    }
+    unsafe { NonZeroUsize::new_unchecked(if len == 0 { EMPTY_TAG } else { len as usize }) }
 }
 
 /// The multithreadedness of a tendril.
@@ -97,8 +91,7 @@ unsafe impl Atomicity for NonAtomic {
     }
 
     #[inline]
-    fn fence_acquire() {
-    }
+    fn fence_acquire() {}
 }
 
 /// A marker of an atomic (and hence concurrent) tendril.
@@ -139,7 +132,8 @@ struct Header<A: Atomicity> {
 }
 
 impl<A> Header<A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline(always)]
     unsafe fn new() -> Header<A> {
@@ -187,8 +181,9 @@ pub enum SubtendrilError {
 /// you attempt to go over the limit.
 #[repr(C)]
 pub struct Tendril<F, A = NonAtomic>
-    where F: fmt::Format,
-          A: Atomicity,
+where
+    F: fmt::Format,
+    A: Atomicity,
 {
     ptr: Cell<NonZeroUsize>,
     len: u32,
@@ -197,7 +192,12 @@ pub struct Tendril<F, A = NonAtomic>
     refcount_marker: PhantomData<A>,
 }
 
-unsafe impl<F, A> Send for Tendril<F, A> where F: fmt::Format, A: Atomicity + Sync { }
+unsafe impl<F, A> Send for Tendril<F, A>
+where
+    F: fmt::Format,
+    A: Atomicity + Sync,
+{
+}
 
 /// `Tendril` for storing native Rust strings.
 pub type StrTendril = Tendril<fmt::UTF8>;
@@ -206,8 +206,9 @@ pub type StrTendril = Tendril<fmt::UTF8>;
 pub type ByteTendril = Tendril<fmt::Bytes>;
 
 impl<F, A> Clone for Tendril<F, A>
-    where F: fmt::Format,
-          A: Atomicity,
+where
+    F: fmt::Format,
+    A: Atomicity,
 {
     #[inline]
     fn clone(&self) -> Tendril<F, A> {
@@ -223,8 +224,9 @@ impl<F, A> Clone for Tendril<F, A>
 }
 
 impl<F, A> Drop for Tendril<F, A>
-    where F: fmt::Format,
-          A: Atomicity,
+where
+    F: fmt::Format,
+    A: Atomicity,
 {
     #[inline]
     fn drop(&mut self) {
@@ -252,21 +254,24 @@ macro_rules! from_iter_method {
     ($ty:ty) => {
         #[inline]
         fn from_iter<I>(iterable: I) -> Self
-            where I: IntoIterator<Item = $ty>
+        where
+            I: IntoIterator<Item = $ty>,
         {
             let mut output = Self::new();
             output.extend(iterable);
             output
         }
-    }
+    };
 }
 
 impl<A> Extend<char> for Tendril<fmt::UTF8, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn extend<I>(&mut self, iterable: I)
-        where I: IntoIterator<Item = char>,
+    where
+        I: IntoIterator<Item = char>,
     {
         let iterator = iterable.into_iter();
         self.force_reserve(iterator.size_hint().0 as u32);
@@ -277,17 +282,20 @@ impl<A> Extend<char> for Tendril<fmt::UTF8, A>
 }
 
 impl<A> FromIterator<char> for Tendril<fmt::UTF8, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     from_iter_method!(char);
 }
 
 impl<A> Extend<u8> for Tendril<fmt::Bytes, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn extend<I>(&mut self, iterable: I)
-        where I: IntoIterator<Item = u8>,
+    where
+        I: IntoIterator<Item = u8>,
     {
         let iterator = iterable.into_iter();
         self.force_reserve(iterator.size_hint().0 as u32);
@@ -298,17 +306,20 @@ impl<A> Extend<u8> for Tendril<fmt::Bytes, A>
 }
 
 impl<A> FromIterator<u8> for Tendril<fmt::Bytes, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     from_iter_method!(u8);
 }
 
 impl<'a, A> Extend<&'a u8> for Tendril<fmt::Bytes, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn extend<I>(&mut self, iterable: I)
-        where I: IntoIterator<Item = &'a u8>,
+    where
+        I: IntoIterator<Item = &'a u8>,
     {
         let iterator = iterable.into_iter();
         self.force_reserve(iterator.size_hint().0 as u32);
@@ -319,17 +330,20 @@ impl<'a, A> Extend<&'a u8> for Tendril<fmt::Bytes, A>
 }
 
 impl<'a, A> FromIterator<&'a u8> for Tendril<fmt::Bytes, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     from_iter_method!(&'a u8);
 }
 
 impl<'a, A> Extend<&'a str> for Tendril<fmt::UTF8, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn extend<I>(&mut self, iterable: I)
-        where I: IntoIterator<Item = &'a str>,
+    where
+        I: IntoIterator<Item = &'a str>,
     {
         for s in iterable {
             self.push_slice(s);
@@ -338,17 +352,20 @@ impl<'a, A> Extend<&'a str> for Tendril<fmt::UTF8, A>
 }
 
 impl<'a, A> FromIterator<&'a str> for Tendril<fmt::UTF8, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     from_iter_method!(&'a str);
 }
 
 impl<'a, A> Extend<&'a [u8]> for Tendril<fmt::Bytes, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn extend<I>(&mut self, iterable: I)
-        where I: IntoIterator<Item = &'a [u8]>,
+    where
+        I: IntoIterator<Item = &'a [u8]>,
     {
         for s in iterable {
             self.push_slice(s);
@@ -357,18 +374,21 @@ impl<'a, A> Extend<&'a [u8]> for Tendril<fmt::Bytes, A>
 }
 
 impl<'a, A> FromIterator<&'a [u8]> for Tendril<fmt::Bytes, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     from_iter_method!(&'a [u8]);
 }
 
 impl<'a, F, A> Extend<&'a Tendril<F, A>> for Tendril<F, A>
-    where F: fmt::Format + 'a,
-          A: Atomicity,
+where
+    F: fmt::Format + 'a,
+    A: Atomicity,
 {
     #[inline]
     fn extend<I>(&mut self, iterable: I)
-        where I: IntoIterator<Item = &'a Tendril<F, A>>,
+    where
+        I: IntoIterator<Item = &'a Tendril<F, A>>,
     {
         for t in iterable {
             self.push_tendril(t);
@@ -377,41 +397,41 @@ impl<'a, F, A> Extend<&'a Tendril<F, A>> for Tendril<F, A>
 }
 
 impl<'a, F, A> FromIterator<&'a Tendril<F, A>> for Tendril<F, A>
-    where F: fmt::Format + 'a,
-          A: Atomicity,
+where
+    F: fmt::Format + 'a,
+    A: Atomicity,
 {
     from_iter_method!(&'a Tendril<F, A>);
 }
 
 impl<F, A> Deref for Tendril<F, A>
-    where F: fmt::SliceFormat,
-          A: Atomicity,
+where
+    F: fmt::SliceFormat,
+    A: Atomicity,
 {
     type Target = F::Slice;
 
     #[inline]
     fn deref(&self) -> &F::Slice {
-        unsafe {
-            F::Slice::from_bytes(self.as_byte_slice())
-        }
+        unsafe { F::Slice::from_bytes(self.as_byte_slice()) }
     }
 }
 
 impl<F, A> DerefMut for Tendril<F, A>
-    where F: fmt::SliceFormat,
-          A: Atomicity,
+where
+    F: fmt::SliceFormat,
+    A: Atomicity,
 {
     #[inline]
     fn deref_mut(&mut self) -> &mut F::Slice {
-        unsafe {
-            F::Slice::from_mut_bytes(self.as_mut_byte_slice())
-        }
+        unsafe { F::Slice::from_mut_bytes(self.as_mut_byte_slice()) }
     }
 }
 
 impl<F, A> Borrow<[u8]> for Tendril<F, A>
-    where F: fmt::SliceFormat,
-          A: Atomicity,
+where
+    F: fmt::SliceFormat,
+    A: Atomicity,
 {
     fn borrow(&self) -> &[u8] {
         self.as_byte_slice()
@@ -423,8 +443,9 @@ impl<F, A> Borrow<[u8]> for Tendril<F, A>
 // https://github.com/rust-lang/rust/issues/27108
 
 impl<F, A> PartialEq for Tendril<F, A>
-    where F: fmt::Format,
-          A: Atomicity,
+where
+    F: fmt::Format,
+    A: Atomicity,
 {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -438,14 +459,17 @@ impl<F, A> PartialEq for Tendril<F, A>
 }
 
 impl<F, A> Eq for Tendril<F, A>
-    where F: fmt::Format,
-          A: Atomicity,
-{ }
+where
+    F: fmt::Format,
+    A: Atomicity,
+{
+}
 
 impl<F, A> PartialOrd for Tendril<F, A>
-    where F: fmt::SliceFormat,
-          <F as fmt::SliceFormat>::Slice: PartialOrd,
-          A: Atomicity,
+where
+    F: fmt::SliceFormat,
+    <F as fmt::SliceFormat>::Slice: PartialOrd,
+    A: Atomicity,
 {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -454,9 +478,10 @@ impl<F, A> PartialOrd for Tendril<F, A>
 }
 
 impl<F, A> Ord for Tendril<F, A>
-    where F: fmt::SliceFormat,
-          <F as fmt::SliceFormat>::Slice: Ord,
-          A: Atomicity,
+where
+    F: fmt::SliceFormat,
+    <F as fmt::SliceFormat>::Slice: Ord,
+    A: Atomicity,
 {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
@@ -465,8 +490,9 @@ impl<F, A> Ord for Tendril<F, A>
 }
 
 impl<F, A> Default for Tendril<F, A>
-    where F: fmt::Format,
-          A: Atomicity,
+where
+    F: fmt::Format,
+    A: Atomicity,
 {
     #[inline(always)]
     fn default() -> Tendril<F, A> {
@@ -475,9 +501,10 @@ impl<F, A> Default for Tendril<F, A>
 }
 
 impl<F, A> strfmt::Debug for Tendril<F, A>
-    where F: fmt::SliceFormat + Default + strfmt::Debug,
-          <F as fmt::SliceFormat>::Slice: strfmt::Debug,
-          A: Atomicity,
+where
+    F: fmt::SliceFormat + Default + strfmt::Debug,
+    <F as fmt::SliceFormat>::Slice: strfmt::Debug,
+    A: Atomicity,
 {
     #[inline]
     fn fmt(&self, f: &mut strfmt::Formatter) -> strfmt::Result {
@@ -494,8 +521,9 @@ impl<F, A> strfmt::Debug for Tendril<F, A>
 }
 
 impl<F, A> hash::Hash for Tendril<F, A>
-    where F: fmt::Format,
-          A: Atomicity,
+where
+    F: fmt::Format,
+    A: Atomicity,
 {
     #[inline]
     fn hash<H: hash::Hasher>(&self, hasher: &mut H) {
@@ -504,15 +532,14 @@ impl<F, A> hash::Hash for Tendril<F, A>
 }
 
 impl<F, A> Tendril<F, A>
-    where F: fmt::Format,
-          A: Atomicity,
+where
+    F: fmt::Format,
+    A: Atomicity,
 {
     /// Create a new, empty `Tendril` in any format.
     #[inline(always)]
     pub fn new() -> Tendril<F, A> {
-        unsafe {
-            Tendril::inline(&[])
-        }
+        unsafe { Tendril::inline(&[]) }
     }
 
     /// Create a new, empty `Tendril` with a specified capacity.
@@ -584,7 +611,8 @@ impl<F, A> Tendril<F, A>
     #[inline]
     pub fn clear(&mut self) {
         if self.ptr.get().get() <= MAX_INLINE_TAG {
-            self.ptr.set(unsafe { NonZeroUsize::new_unchecked(EMPTY_TAG) });
+            self.ptr
+                .set(unsafe { NonZeroUsize::new_unchecked(EMPTY_TAG) });
         } else {
             let (_, shared, _) = unsafe { self.assume_buf() };
             if shared {
@@ -634,8 +662,9 @@ impl<F, A> Tendril<F, A>
     /// View as a superset format, for free.
     #[inline(always)]
     pub fn as_superset<Super>(&self) -> &Tendril<Super, A>
-        where F: fmt::SubsetOf<Super>,
-              Super: fmt::Format,
+    where
+        F: fmt::SubsetOf<Super>,
+        Super: fmt::Format,
     {
         unsafe { mem::transmute(self) }
     }
@@ -643,8 +672,9 @@ impl<F, A> Tendril<F, A>
     /// Convert into a superset format, for free.
     #[inline(always)]
     pub fn into_superset<Super>(self) -> Tendril<Super, A>
-        where F: fmt::SubsetOf<Super>,
-              Super: fmt::Format,
+    where
+        F: fmt::SubsetOf<Super>,
+        Super: fmt::Format,
     {
         unsafe { mem::transmute(self) }
     }
@@ -652,7 +682,8 @@ impl<F, A> Tendril<F, A>
     /// View as a subset format, if the `Tendril` conforms to that subset.
     #[inline]
     pub fn try_as_subset<Sub>(&self) -> Result<&Tendril<Sub, A>, ()>
-        where Sub: fmt::SubsetOf<F>,
+    where
+        Sub: fmt::SubsetOf<F>,
     {
         match Sub::revalidate_subset(self.as_byte_slice()) {
             true => Ok(unsafe { mem::transmute(self) }),
@@ -663,7 +694,8 @@ impl<F, A> Tendril<F, A>
     /// Convert into a subset format, if the `Tendril` conforms to that subset.
     #[inline]
     pub fn try_into_subset<Sub>(self) -> Result<Tendril<Sub, A>, Self>
-        where Sub: fmt::SubsetOf<F>,
+    where
+        Sub: fmt::SubsetOf<F>,
     {
         match Sub::revalidate_subset(self.as_byte_slice()) {
             true => Ok(unsafe { mem::transmute(self) }),
@@ -675,7 +707,8 @@ impl<F, A> Tendril<F, A>
     /// that format.
     #[inline]
     pub fn try_reinterpret_view<Other>(&self) -> Result<&Tendril<Other, A>, ()>
-        where Other: fmt::Format,
+    where
+        Other: fmt::Format,
     {
         match Other::validate(self.as_byte_slice()) {
             true => Ok(unsafe { mem::transmute(self) }),
@@ -691,7 +724,8 @@ impl<F, A> Tendril<F, A>
     /// See the `encode` and `decode` methods for character encoding conversion.
     #[inline]
     pub fn try_reinterpret<Other>(self) -> Result<Tendril<Other, A>, Self>
-        where Other: fmt::Format,
+    where
+        Other: fmt::Format,
     {
         match Other::validate(self.as_byte_slice()) {
             true => Ok(unsafe { mem::transmute(self) }),
@@ -722,7 +756,8 @@ impl<F, A> Tendril<F, A>
                 let (self_buf, self_shared, _) = self.assume_buf();
                 let (other_buf, other_shared, _) = other.assume_buf();
 
-                if self_shared && other_shared
+                if self_shared
+                    && other_shared
                     && (self_buf.data_ptr() == other_buf.data_ptr())
                     && (other.aux.get() == self.aux.get() + self.len)
                 {
@@ -744,17 +779,18 @@ impl<F, A> Tendril<F, A>
     /// `Err` if these are out of bounds, or if the resulting slice
     /// does not conform to the format.
     #[inline]
-    pub fn try_subtendril(&self, offset: u32, length: u32)
-        -> Result<Tendril<F, A>, SubtendrilError>
-    {
+    pub fn try_subtendril(
+        &self,
+        offset: u32,
+        length: u32,
+    ) -> Result<Tendril<F, A>, SubtendrilError> {
         let self_len = self.len32();
         if offset > self_len || length > (self_len - offset) {
             return Err(SubtendrilError::OutOfBounds);
         }
 
         unsafe {
-            let byte_slice = unsafe_slice(self.as_byte_slice(),
-                offset as usize, length as usize);
+            let byte_slice = unsafe_slice(self.as_byte_slice(), offset as usize, length as usize);
             if !F::validate_subseq(byte_slice) {
                 return Err(SubtendrilError::ValidationFailed);
             }
@@ -787,8 +823,11 @@ impl<F, A> Tendril<F, A>
         let new_len = old_len - n;
 
         unsafe {
-            if !F::validate_suffix(unsafe_slice(self.as_byte_slice(),
-                                                n as usize, new_len as usize)) {
+            if !F::validate_suffix(unsafe_slice(
+                self.as_byte_slice(),
+                n as usize,
+                new_len as usize,
+            )) {
                 return Err(SubtendrilError::ValidationFailed);
             }
 
@@ -822,8 +861,7 @@ impl<F, A> Tendril<F, A>
         let new_len = old_len - n;
 
         unsafe {
-            if !F::validate_prefix(unsafe_slice(self.as_byte_slice(),
-                                                0, new_len as usize)) {
+            if !F::validate_prefix(unsafe_slice(self.as_byte_slice(), 0, new_len as usize)) {
                 return Err(SubtendrilError::ValidationFailed);
             }
 
@@ -844,7 +882,8 @@ impl<F, A> Tendril<F, A>
     /// View as another format, without validating.
     #[inline(always)]
     pub unsafe fn reinterpret_view_without_validating<Other>(&self) -> &Tendril<Other, A>
-        where Other: fmt::Format,
+    where
+        Other: fmt::Format,
     {
         mem::transmute(self)
     }
@@ -852,7 +891,8 @@ impl<F, A> Tendril<F, A>
     /// Convert into another format, without validating.
     #[inline(always)]
     pub unsafe fn reinterpret_without_validating<Other>(self) -> Tendril<Other, A>
-        where Other: fmt::Format,
+    where
+        Other: fmt::Format,
     {
         mem::transmute(self)
     }
@@ -873,14 +913,17 @@ impl<F, A> Tendril<F, A>
     pub unsafe fn push_bytes_without_validating(&mut self, buf: &[u8]) {
         assert!(buf.len() <= buf32::MAX_LEN);
 
-        let Fixup { drop_left, drop_right, insert_len, insert_bytes }
-            = F::fixup(self.as_byte_slice(), buf);
+        let Fixup {
+            drop_left,
+            drop_right,
+            insert_len,
+            insert_bytes,
+        } = F::fixup(self.as_byte_slice(), buf);
 
         // FIXME: think more about overflow
         let adj_len = self.len32() + insert_len - drop_left;
 
-        let new_len = adj_len.checked_add(buf.len() as u32).expect(OFLOW)
-            - drop_right;
+        let new_len = adj_len.checked_add(buf.len() as u32).expect(OFLOW) - drop_right;
 
         let drop_left = drop_left as usize;
         let drop_right = drop_right as usize;
@@ -891,16 +934,30 @@ impl<F, A> Tendril<F, A>
                 let old = self.as_byte_slice();
                 let mut dest = tmp.as_mut_ptr();
                 copy_and_advance(&mut dest, unsafe_slice(old, 0, old.len() - drop_left));
-                copy_and_advance(&mut dest, unsafe_slice(&insert_bytes, 0, insert_len as usize));
-                copy_and_advance(&mut dest, unsafe_slice(buf, drop_right, buf.len() - drop_right));
+                copy_and_advance(
+                    &mut dest,
+                    unsafe_slice(&insert_bytes, 0, insert_len as usize),
+                );
+                copy_and_advance(
+                    &mut dest,
+                    unsafe_slice(buf, drop_right, buf.len() - drop_right),
+                );
             }
             *self = Tendril::inline(&tmp[..new_len as usize]);
         } else {
             self.make_owned_with_capacity(new_len);
             let (owned, _, _) = self.assume_buf();
-            let mut dest = owned.data_ptr().offset((owned.len as usize - drop_left) as isize);
-            copy_and_advance(&mut dest, unsafe_slice(&insert_bytes, 0, insert_len as usize));
-            copy_and_advance(&mut dest, unsafe_slice(buf, drop_right, buf.len() - drop_right));
+            let mut dest = owned
+                .data_ptr()
+                .offset((owned.len as usize - drop_left) as isize);
+            copy_and_advance(
+                &mut dest,
+                unsafe_slice(&insert_bytes, 0, insert_len as usize),
+            );
+            copy_and_advance(
+                &mut dest,
+                unsafe_slice(buf, drop_right, buf.len() - drop_right),
+            );
             self.len = new_len;
         }
     }
@@ -911,8 +968,11 @@ impl<F, A> Tendril<F, A>
     #[inline]
     pub unsafe fn unsafe_subtendril(&self, offset: u32, length: u32) -> Tendril<F, A> {
         if length <= MAX_INLINE_LEN as u32 {
-            Tendril::inline(unsafe_slice(self.as_byte_slice(),
-                offset as usize, length as usize))
+            Tendril::inline(unsafe_slice(
+                self.as_byte_slice(),
+                offset as usize,
+                length as usize,
+            ))
         } else {
             self.make_buf_shared();
             self.incref();
@@ -928,8 +988,11 @@ impl<F, A> Tendril<F, A>
     pub unsafe fn unsafe_pop_front(&mut self, n: u32) {
         let new_len = self.len32() - n;
         if new_len <= MAX_INLINE_LEN as u32 {
-             *self = Tendril::inline(unsafe_slice(self.as_byte_slice(),
-                n as usize, new_len as usize));
+            *self = Tendril::inline(unsafe_slice(
+                self.as_byte_slice(),
+                n as usize,
+                new_len as usize,
+            ));
         } else {
             self.make_buf_shared();
             self.aux.set(self.aux.get() + n);
@@ -944,8 +1007,7 @@ impl<F, A> Tendril<F, A>
     pub unsafe fn unsafe_pop_back(&mut self, n: u32) {
         let new_len = self.len32() - n;
         if new_len <= MAX_INLINE_LEN as u32 {
-             *self = Tendril::inline(unsafe_slice(self.as_byte_slice(),
-                0, new_len as usize));
+            *self = Tendril::inline(unsafe_slice(self.as_byte_slice(), 0, new_len as usize));
         } else {
             self.make_buf_shared();
             self.len -= n;
@@ -1006,11 +1068,15 @@ impl<F, A> Tendril<F, A>
             false => (self.aux.get(), 0),
         };
 
-        (Buf32 {
-            ptr: header,
-            len: offset + self.len32(),
-            cap: cap,
-        }, shared, offset)
+        (
+            Buf32 {
+                ptr: header,
+                len: offset + self.len32(),
+                cap: cap,
+            },
+            shared,
+            offset,
+        )
     }
 
     #[inline]
@@ -1068,8 +1134,10 @@ impl<F, A> Tendril<F, A>
                 }
                 _ => {
                     let (buf, _, offset) = self.assume_buf();
-                    copy_lifetime(self, unsafe_slice(buf.data(),
-                        offset as usize, self.len32() as usize))
+                    copy_lifetime(
+                        self,
+                        unsafe_slice(buf.data(), offset as usize, self.len32() as usize),
+                    )
                 }
             }
         }
@@ -1097,23 +1165,20 @@ impl<F, A> Tendril<F, A>
 }
 
 impl<F, A> Tendril<F, A>
-    where F: fmt::SliceFormat,
-          A: Atomicity,
+where
+    F: fmt::SliceFormat,
+    A: Atomicity,
 {
     /// Build a `Tendril` by copying a slice.
     #[inline]
     pub fn from_slice(x: &F::Slice) -> Tendril<F, A> {
-        unsafe {
-            Tendril::from_byte_slice_without_validating(x.as_bytes())
-        }
+        unsafe { Tendril::from_byte_slice_without_validating(x.as_bytes()) }
     }
 
     /// Push a slice onto the end of the `Tendril`.
     #[inline]
     pub fn push_slice(&mut self, x: &F::Slice) {
-        unsafe {
-            self.push_bytes_without_validating(x.as_bytes())
-        }
+        unsafe { self.push_bytes_without_validating(x.as_bytes()) }
     }
 }
 
@@ -1128,16 +1193,18 @@ impl<F, A> Tendril<F, A>
 /// and may be returned to a `Tendril` by `Tendril::from(self)`.
 #[derive(Clone)]
 pub struct SendTendril<F>
-    where F: fmt::Format,
+where
+    F: fmt::Format,
 {
     tendril: Tendril<F>,
 }
 
-unsafe impl<F> Send for SendTendril<F> where F: fmt::Format { }
+unsafe impl<F> Send for SendTendril<F> where F: fmt::Format {}
 
 impl<F, A> From<Tendril<F, A>> for SendTendril<F>
-    where F: fmt::Format,
-          A: Atomicity,
+where
+    F: fmt::Format,
+    A: Atomicity,
 {
     #[inline]
     fn from(tendril: Tendril<F, A>) -> SendTendril<F> {
@@ -1146,14 +1213,13 @@ impl<F, A> From<Tendril<F, A>> for SendTendril<F>
 }
 
 impl<F, A> From<SendTendril<F>> for Tendril<F, A>
-    where F: fmt::Format,
-          A: Atomicity,
+where
+    F: fmt::Format,
+    A: Atomicity,
 {
     #[inline]
     fn from(send: SendTendril<F>) -> Tendril<F, A> {
-        unsafe {
-            mem::transmute(send.tendril)
-        }
+        unsafe { mem::transmute(send.tendril) }
         // header.refcount may have been initialised as an Atomic or a NonAtomic, but the value
         // will be the same (1) regardless, because the layout is defined.
         // Thus we don't need to fiddle about resetting it or anything like that.
@@ -1161,33 +1227,38 @@ impl<F, A> From<SendTendril<F>> for Tendril<F, A>
 }
 
 /// `Tendril`-related methods for Rust slices.
-pub trait SliceExt<F>: fmt::Slice where F: fmt::SliceFormat<Slice=Self> {
+pub trait SliceExt<F>: fmt::Slice
+where
+    F: fmt::SliceFormat<Slice = Self>,
+{
     /// Make a `Tendril` from this slice.
     #[inline]
     fn to_tendril(&self) -> Tendril<F> {
-    // It should be done thusly, but at the time of writing the defaults don't help inference:
-    //fn to_tendril<A = NonAtomic>(&self) -> Tendril<Self::Format, A>
-    //    where A: Atomicity,
-    //{
+        // It should be done thusly, but at the time of writing the defaults don't help inference:
+        //fn to_tendril<A = NonAtomic>(&self) -> Tendril<Self::Format, A>
+        //    where A: Atomicity,
+        //{
         Tendril::from_slice(self)
     }
 }
 
-impl SliceExt<fmt::UTF8> for str { }
-impl SliceExt<fmt::Bytes> for [u8] { }
+impl SliceExt<fmt::UTF8> for str {}
+impl SliceExt<fmt::Bytes> for [u8] {}
 
 impl<F, A> Tendril<F, A>
-    where F: for<'a> fmt::CharFormat<'a>,
-          A: Atomicity,
+where
+    F: for<'a> fmt::CharFormat<'a>,
+    A: Atomicity,
 {
     /// Remove and return the first character, if any.
     #[inline]
     pub fn pop_front_char<'a>(&'a mut self) -> Option<char> {
         unsafe {
             let next_char; // first char in iterator
-            let mut skip = 0;  // number of bytes to skip, or 0 to clear
+            let mut skip = 0; // number of bytes to skip, or 0 to clear
 
-            { // <--+
+            {
+                // <--+
                 //  |  Creating an iterator borrows self, so introduce a
                 //  +- scope to contain the borrow (that way we can mutate
                 //     self below, after this scope exits).
@@ -1221,16 +1292,14 @@ impl<F, A> Tendril<F, A>
     ///
     /// Returns `None` on an empty string.
     #[inline]
-    pub fn pop_front_char_run<'a, C, R>(&'a mut self, mut classify: C)
-        -> Option<(Tendril<F, A>, R)>
-        where C: FnMut(char) -> R,
-              R: PartialEq,
+    pub fn pop_front_char_run<'a, C, R>(&'a mut self, mut classify: C) -> Option<(Tendril<F, A>, R)>
+    where
+        C: FnMut(char) -> R,
+        R: PartialEq,
     {
         let (class, first_mismatch);
         {
-            let mut chars = unsafe {
-                F::char_indices(self.as_byte_slice())
-            };
+            let mut chars = unsafe { F::char_indices(self.as_byte_slice()) };
             let (_, first) = unwrap_or_return!(chars.next(), None);
             class = classify(first);
             first_mismatch = chars.find(|&(_, ch)| &classify(ch) != &class);
@@ -1262,15 +1331,18 @@ impl<F, A> Tendril<F, A>
 /// Extension trait for `io::Read`.
 pub trait ReadExt: io::Read {
     fn read_to_tendril<A>(&mut self, buf: &mut Tendril<fmt::Bytes, A>) -> io::Result<usize>
-        where A: Atomicity;
+    where
+        A: Atomicity;
 }
 
 impl<T> ReadExt for T
-    where T: io::Read
+where
+    T: io::Read,
 {
     /// Read all bytes until EOF.
     fn read_to_tendril<A>(&mut self, buf: &mut Tendril<fmt::Bytes, A>) -> io::Result<usize>
-        where A: Atomicity,
+    where
+        A: Atomicity,
     {
         // Adapted from libstd/io/mod.rs.
         const DEFAULT_BUF_SIZE: u32 = 64 * 1024;
@@ -1314,7 +1386,8 @@ impl<T> ReadExt for T
 }
 
 impl<A> io::Write for Tendril<fmt::Bytes, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -1336,7 +1409,8 @@ impl<A> io::Write for Tendril<fmt::Bytes, A>
 
 #[cfg(feature = "encoding")]
 impl<A> encoding::ByteWriter for Tendril<fmt::Bytes, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn write_byte(&mut self, b: u8) {
@@ -1355,8 +1429,9 @@ impl<A> encoding::ByteWriter for Tendril<fmt::Bytes, A>
 }
 
 impl<F, A> Tendril<F, A>
-    where A: Atomicity,
-          F: fmt::SliceFormat<Slice=[u8]>
+where
+    A: Atomicity,
+    F: fmt::SliceFormat<Slice = [u8]>,
 {
     /// Decode from some character encoding into UTF-8.
     ///
@@ -1364,9 +1439,11 @@ impl<F, A> Tendril<F, A>
     /// for more information.
     #[inline]
     #[cfg(feature = "encoding")]
-    pub fn decode(&self, encoding: EncodingRef, trap: DecoderTrap)
-        -> Result<Tendril<fmt::UTF8, A>, ::std::borrow::Cow<'static, str>>
-    {
+    pub fn decode(
+        &self,
+        encoding: EncodingRef,
+        trap: DecoderTrap,
+    ) -> Result<Tendril<fmt::UTF8, A>, ::std::borrow::Cow<'static, str>> {
         let mut ret = Tendril::new();
         encoding.decode_to(&*self, trap, &mut ret).map(|_| ret)
     }
@@ -1379,9 +1456,7 @@ impl<F, A> Tendril<F, A>
     #[inline]
     pub unsafe fn push_uninitialized(&mut self, n: u32) {
         let new_len = self.len32().checked_add(n).expect(OFLOW);
-        if new_len <= MAX_INLINE_LEN as u32
-            && self.ptr.get().get() <= MAX_INLINE_TAG
-        {
+        if new_len <= MAX_INLINE_LEN as u32 && self.ptr.get().get() <= MAX_INLINE_TAG {
             self.ptr.set(inline_tag(new_len))
         } else {
             self.make_owned_with_capacity(new_len);
@@ -1391,7 +1466,8 @@ impl<F, A> Tendril<F, A>
 }
 
 impl<A> strfmt::Display for Tendril<fmt::UTF8, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn fmt(&self, f: &mut strfmt::Formatter) -> strfmt::Result {
@@ -1400,7 +1476,8 @@ impl<A> strfmt::Display for Tendril<fmt::UTF8, A>
 }
 
 impl<A> str::FromStr for Tendril<fmt::UTF8, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     type Err = ();
 
@@ -1411,7 +1488,8 @@ impl<A> str::FromStr for Tendril<fmt::UTF8, A>
 }
 
 impl<A> strfmt::Write for Tendril<fmt::UTF8, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn write_str(&mut self, s: &str) -> strfmt::Result {
@@ -1422,7 +1500,8 @@ impl<A> strfmt::Write for Tendril<fmt::UTF8, A>
 
 #[cfg(feature = "encoding")]
 impl<A> encoding::StringWriter for Tendril<fmt::UTF8, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn write_char(&mut self, c: char) {
@@ -1441,7 +1520,8 @@ impl<A> encoding::StringWriter for Tendril<fmt::UTF8, A>
 }
 
 impl<A> Tendril<fmt::UTF8, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     /// Encode from UTF-8 into some other character encoding.
     ///
@@ -1449,9 +1529,11 @@ impl<A> Tendril<fmt::UTF8, A>
     /// for more information.
     #[inline]
     #[cfg(feature = "encoding")]
-    pub fn encode(&self, encoding: EncodingRef, trap: EncoderTrap)
-        -> Result<Tendril<fmt::Bytes, A>, ::std::borrow::Cow<'static, str>>
-    {
+    pub fn encode(
+        &self,
+        encoding: EncodingRef,
+        trap: EncoderTrap,
+    ) -> Result<Tendril<fmt::Bytes, A>, ::std::borrow::Cow<'static, str>> {
         let mut ret = Tendril::new();
         encoding.encode_to(&*self, trap, &mut ret).map(|_| ret)
     }
@@ -1490,10 +1572,10 @@ macro_rules! format_tendril {
     ($($arg:tt)*) => ($crate::StrTendril::format(format_args!($($arg)*)))
 }
 
-
 impl<'a, F, A> From<&'a F::Slice> for Tendril<F, A>
-    where F: fmt::SliceFormat,
-          A: Atomicity,
+where
+    F: fmt::SliceFormat,
+    A: Atomicity,
 {
     #[inline]
     fn from(input: &F::Slice) -> Tendril<F, A> {
@@ -1502,7 +1584,8 @@ impl<'a, F, A> From<&'a F::Slice> for Tendril<F, A>
 }
 
 impl<A> From<String> for Tendril<fmt::UTF8, A>
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn from(input: String) -> Tendril<fmt::UTF8, A> {
@@ -1511,8 +1594,9 @@ impl<A> From<String> for Tendril<fmt::UTF8, A>
 }
 
 impl<F, A> AsRef<F::Slice> for Tendril<F, A>
-    where F: fmt::SliceFormat,
-          A: Atomicity,
+where
+    F: fmt::SliceFormat,
+    A: Atomicity,
 {
     #[inline]
     fn as_ref(&self) -> &F::Slice {
@@ -1521,7 +1605,8 @@ impl<F, A> AsRef<F::Slice> for Tendril<F, A>
 }
 
 impl<A> From<Tendril<fmt::UTF8, A>> for String
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn from(input: Tendril<fmt::UTF8, A>) -> String {
@@ -1530,7 +1615,8 @@ impl<A> From<Tendril<fmt::UTF8, A>> for String
 }
 
 impl<'a, A> From<&'a Tendril<fmt::UTF8, A>> for String
-    where A: Atomicity,
+where
+    A: Atomicity,
 {
     #[inline]
     fn from(input: &'a Tendril<fmt::UTF8, A>) -> String {
@@ -1538,20 +1624,20 @@ impl<'a, A> From<&'a Tendril<fmt::UTF8, A>> for String
     }
 }
 
-
 #[cfg(all(test, feature = "bench"))]
-#[path="bench.rs"]
+#[path = "bench.rs"]
 mod bench;
 
 #[cfg(test)]
 mod test {
-    use super::{Tendril, ByteTendril, StrTendril, SendTendril,
-                ReadExt, SliceExt, Header, NonAtomic, Atomic};
+    use super::{
+        Atomic, ByteTendril, Header, NonAtomic, ReadExt, SendTendril, SliceExt, StrTendril, Tendril,
+    };
     use fmt;
     use std::iter;
     use std::thread;
 
-    fn assert_send<T: Send>() { }
+    fn assert_send<T: Send>() {}
 
     #[test]
     fn smoke_test() {
@@ -1573,8 +1659,13 @@ mod test {
         }
         let compiler_uses_inline_drop_flags = mem::size_of::<EmptyWithDrop>() > 0;
 
-        let correct = mem::size_of::<*const ()>() + 8 +
-                      if compiler_uses_inline_drop_flags { 1 } else { 0 };
+        let correct = mem::size_of::<*const ()>()
+            + 8
+            + if compiler_uses_inline_drop_flags {
+                1
+            } else {
+                0
+            };
 
         assert_eq!(correct, mem::size_of::<ByteTendril>());
         assert_eq!(correct, mem::size_of::<StrTendril>());
@@ -1594,7 +1685,10 @@ mod test {
         assert!(StrTendril::try_from_byte_slice(b"\xEA\x99\xFF").is_err());
         assert!(StrTendril::try_from_byte_slice(b"\xEA\x99").is_err());
         assert!(StrTendril::try_from_byte_slice(b"\xEA\x99\xAE\xEA").is_err());
-        assert_eq!("\u{a66e}", &*StrTendril::try_from_byte_slice(b"\xEA\x99\xAE").unwrap());
+        assert_eq!(
+            "\u{a66e}",
+            &*StrTendril::try_from_byte_slice(b"\xEA\x99\xAE").unwrap()
+        );
 
         let mut t = StrTendril::new();
         assert!(t.try_push_bytes(b"\xEA\x99").is_err());
@@ -1639,17 +1733,25 @@ mod test {
 
     #[test]
     fn format_debug() {
-        assert_eq!(r#"Tendril<UTF8>(inline: "foobar")"#,
-                   &*format!("{:?}", "foobar".to_tendril()));
-        assert_eq!(r#"Tendril<Bytes>(inline: [102, 111, 111, 98, 97, 114])"#,
-                   &*format!("{:?}", b"foobar".to_tendril()));
+        assert_eq!(
+            r#"Tendril<UTF8>(inline: "foobar")"#,
+            &*format!("{:?}", "foobar".to_tendril())
+        );
+        assert_eq!(
+            r#"Tendril<Bytes>(inline: [102, 111, 111, 98, 97, 114])"#,
+            &*format!("{:?}", b"foobar".to_tendril())
+        );
 
         let t = "anextralongstring".to_tendril();
-        assert_eq!(r#"Tendril<UTF8>(owned: "anextralongstring")"#,
-                   &*format!("{:?}", t));
+        assert_eq!(
+            r#"Tendril<UTF8>(owned: "anextralongstring")"#,
+            &*format!("{:?}", t)
+        );
         let _ = t.clone();
-        assert_eq!(r#"Tendril<UTF8>(shared: "anextralongstring")"#,
-                   &*format!("{:?}", t));
+        assert_eq!(
+            r#"Tendril<UTF8>(shared: "anextralongstring")"#,
+            &*format!("{:?}", t)
+        );
     }
 
     #[test]
@@ -1663,12 +1765,18 @@ mod test {
         t.pop_back(1);
         assert_eq!("o-ba".to_tendril(), t);
 
-        assert_eq!("foo".to_tendril(),
-            "foo-a-longer-string-bar-baz".to_tendril().subtendril(0, 3));
-        assert_eq!("oo-a-".to_tendril(),
-            "foo-a-longer-string-bar-baz".to_tendril().subtendril(1, 5));
-        assert_eq!("bar".to_tendril(),
-            "foo-a-longer-string-bar-baz".to_tendril().subtendril(20, 3));
+        assert_eq!(
+            "foo".to_tendril(),
+            "foo-a-longer-string-bar-baz".to_tendril().subtendril(0, 3)
+        );
+        assert_eq!(
+            "oo-a-".to_tendril(),
+            "foo-a-longer-string-bar-baz".to_tendril().subtendril(1, 5)
+        );
+        assert_eq!(
+            "bar".to_tendril(),
+            "foo-a-longer-string-bar-baz".to_tendril().subtendril(20, 3)
+        );
 
         let mut t = "another rather long string".to_tendril();
         t.pop_front(2);
@@ -1710,20 +1818,32 @@ mod test {
 
     #[test]
     fn conversion() {
-        assert_eq!(&[0x66, 0x6F, 0x6F].to_tendril(), "foo".to_tendril().as_bytes());
-        assert_eq!([0x66, 0x6F, 0x6F].to_tendril(), "foo".to_tendril().into_bytes());
+        assert_eq!(
+            &[0x66, 0x6F, 0x6F].to_tendril(),
+            "foo".to_tendril().as_bytes()
+        );
+        assert_eq!(
+            [0x66, 0x6F, 0x6F].to_tendril(),
+            "foo".to_tendril().into_bytes()
+        );
 
         let ascii: Tendril<fmt::ASCII> = b"hello".to_tendril().try_reinterpret().unwrap();
         assert_eq!(&"hello".to_tendril(), ascii.as_superset());
         assert_eq!("hello".to_tendril(), ascii.clone().into_superset());
 
-        assert!(b"\xFF".to_tendril().try_reinterpret::<fmt::ASCII>().is_err());
+        assert!(b"\xFF"
+            .to_tendril()
+            .try_reinterpret::<fmt::ASCII>()
+            .is_err());
 
         let t = "hello".to_tendril();
         let ascii: &Tendril<fmt::ASCII> = t.try_as_subset().unwrap();
         assert_eq!(b"hello", &**ascii.as_bytes());
 
-        assert!("ő".to_tendril().try_reinterpret_view::<fmt::ASCII>().is_err());
+        assert!("ő"
+            .to_tendril()
+            .try_reinterpret_view::<fmt::ASCII>()
+            .is_err());
         assert!("ő".to_tendril().try_as_subset::<fmt::ASCII>().is_err());
 
         let ascii: Tendril<fmt::ASCII> = "hello".to_tendril().try_into_subset().unwrap();
@@ -1763,12 +1883,10 @@ mod test {
         assert!(Tendril::<fmt::WTF8>::try_from_byte_slice(b"\xED\xB2\xA9").is_ok());
         assert!(Tendril::<fmt::WTF8>::try_from_byte_slice(b"\xED\xA0\xBD\xED\xB2\xA9").is_err());
 
-        let t: Tendril<fmt::WTF8>
-            = Tendril::try_from_byte_slice(b"\xED\xA0\xBD\xEA\x99\xAE").unwrap();
-        assert!(b"\xED\xA0\xBD".to_tendril().try_reinterpret().unwrap()
-            == t.subtendril(0, 3));
-        assert!(b"\xEA\x99\xAE".to_tendril().try_reinterpret().unwrap()
-            == t.subtendril(3, 3));
+        let t: Tendril<fmt::WTF8> =
+            Tendril::try_from_byte_slice(b"\xED\xA0\xBD\xEA\x99\xAE").unwrap();
+        assert!(b"\xED\xA0\xBD".to_tendril().try_reinterpret().unwrap() == t.subtendril(0, 3));
+        assert!(b"\xEA\x99\xAE".to_tendril().try_reinterpret().unwrap() == t.subtendril(3, 3));
         assert!(t.try_reinterpret_view::<fmt::UTF8>().is_err());
 
         assert!(t.try_subtendril(0, 1).is_err());
@@ -1863,10 +1981,16 @@ mod test {
             t[4] = 0xEA;
             t[5] = 0x99;
             t[6] = 0xAE;
-            assert_eq!("xyŋ\u{a66e}", &**t.try_reinterpret_view::<fmt::UTF8>().unwrap());
+            assert_eq!(
+                "xyŋ\u{a66e}",
+                &**t.try_reinterpret_view::<fmt::UTF8>().unwrap()
+            );
             t.push_uninitialized(20);
             t.pop_back(20);
-            assert_eq!("xyŋ\u{a66e}", &**t.try_reinterpret_view::<fmt::UTF8>().unwrap());
+            assert_eq!(
+                "xyŋ\u{a66e}",
+                &**t.try_reinterpret_view::<fmt::UTF8>().unwrap()
+            );
         }
     }
 
@@ -1901,13 +2025,17 @@ mod test {
         use encoding::{all, EncoderTrap};
 
         let t = "안녕하세요 러스트".to_tendril();
-        assert_eq!(b"\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\xbf\xe4\x20\xb7\xaf\xbd\xba\xc6\xae",
-            &*t.encode(all::WINDOWS_949, EncoderTrap::Strict).unwrap());
+        assert_eq!(
+            b"\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\xbf\xe4\x20\xb7\xaf\xbd\xba\xc6\xae",
+            &*t.encode(all::WINDOWS_949, EncoderTrap::Strict).unwrap()
+        );
 
         let t = "Энергия пробуждения ия-я-я! \u{a66e}".to_tendril();
-        assert_eq!(b"\xfc\xce\xc5\xd2\xc7\xc9\xd1 \xd0\xd2\xcf\xc2\xd5\xd6\xc4\xc5\xce\
+        assert_eq!(
+            b"\xfc\xce\xc5\xd2\xc7\xc9\xd1 \xd0\xd2\xcf\xc2\xd5\xd6\xc4\xc5\xce\
                      \xc9\xd1 \xc9\xd1\x2d\xd1\x2d\xd1\x21 ?",
-            &*t.encode(all::KOI8_U, EncoderTrap::Replace).unwrap());
+            &*t.encode(all::KOI8_U, EncoderTrap::Replace).unwrap()
+        );
 
         let t = "\u{1f4a9}".to_tendril();
         assert!(t.encode(all::WINDOWS_1252, EncoderTrap::Strict).is_err());
@@ -1919,21 +2047,29 @@ mod test {
         use encoding::{all, DecoderTrap};
 
         let t = b"\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\
-                  \xbf\xe4\x20\xb7\xaf\xbd\xba\xc6\xae".to_tendril();
-        assert_eq!("안녕하세요 러스트",
-            &*t.decode(all::WINDOWS_949, DecoderTrap::Strict).unwrap());
+                  \xbf\xe4\x20\xb7\xaf\xbd\xba\xc6\xae"
+            .to_tendril();
+        assert_eq!(
+            "안녕하세요 러스트",
+            &*t.decode(all::WINDOWS_949, DecoderTrap::Strict).unwrap()
+        );
 
         let t = b"\xfc\xce\xc5\xd2\xc7\xc9\xd1 \xd0\xd2\xcf\xc2\xd5\xd6\xc4\xc5\xce\
-                  \xc9\xd1 \xc9\xd1\x2d\xd1\x2d\xd1\x21".to_tendril();
-        assert_eq!("Энергия пробуждения ия-я-я!",
-            &*t.decode(all::KOI8_U, DecoderTrap::Replace).unwrap());
+                  \xc9\xd1 \xc9\xd1\x2d\xd1\x2d\xd1\x21"
+            .to_tendril();
+        assert_eq!(
+            "Энергия пробуждения ия-я-я!",
+            &*t.decode(all::KOI8_U, DecoderTrap::Replace).unwrap()
+        );
 
         let t = b"x \xff y".to_tendril();
         assert!(t.decode(all::UTF_8, DecoderTrap::Strict).is_err());
 
         let t = b"x \xff y".to_tendril();
-        assert_eq!("x \u{fffd} y",
-            &*t.decode(all::UTF_8, DecoderTrap::Replace).unwrap());
+        assert_eq!(
+            "x \u{fffd} y",
+            &*t.decode(all::UTF_8, DecoderTrap::Replace).unwrap()
+        );
     }
 
     #[test]
@@ -1949,10 +2085,8 @@ mod test {
         assert_eq!(None, t.pop_front_char());
 
         let mut t = mk(b" \t xyz");
-        assert!(Some((mk(b" \t "), true))
-            == t.pop_front_char_run(char::is_whitespace));
-        assert!(Some((mk(b"xyz"), false))
-            == t.pop_front_char_run(char::is_whitespace));
+        assert!(Some((mk(b" \t "), true)) == t.pop_front_char_run(char::is_whitespace));
+        assert!(Some((mk(b"xyz"), false)) == t.pop_front_char_run(char::is_whitespace));
         assert!(t.pop_front_char_run(char::is_whitespace).is_none());
 
         let mut t = Tendril::<fmt::ASCII>::new();
@@ -1975,10 +2109,8 @@ mod test {
         assert_eq!(None, t.pop_front_char());
 
         let mut t = mk(b" \t \xfe\xa7z");
-        assert!(Some((mk(b" \t "), true))
-            == t.pop_front_char_run(char::is_whitespace));
-        assert!(Some((mk(b"\xfe\xa7z"), false))
-            == t.pop_front_char_run(char::is_whitespace));
+        assert!(Some((mk(b" \t "), true)) == t.pop_front_char_run(char::is_whitespace));
+        assert!(Some((mk(b"\xfe\xa7z"), false)) == t.pop_front_char_run(char::is_whitespace));
         assert!(t.pop_front_char_run(char::is_whitespace).is_none());
 
         let mut t = Tendril::<fmt::Latin1>::new();
@@ -1995,7 +2127,10 @@ mod test {
     #[test]
     fn format() {
         assert_eq!("", &*format_tendril!(""));
-        assert_eq!("two and two make 4", &*format_tendril!("two and two make {}", 2+2));
+        assert_eq!(
+            "two and two make 4",
+            &*format_tendril!("two and two make {}", 2 + 2)
+        );
     }
 
     #[test]
@@ -2059,7 +2194,6 @@ mod test {
         assert!(t.try_pop_back(5).is_err());
         assert!(t.try_pop_back(500).is_err());
 
-
         let mut t = "abcd".to_tendril();
         assert!(t.try_pop_front(1).is_ok());
         assert!(t.try_pop_front(4).is_err());
@@ -2071,10 +2205,26 @@ mod test {
 
     #[test]
     fn compare() {
-        for &a in &["indiscretions", "validity", "hallucinogenics", "timelessness",
-                    "original", "microcosms", "boilers", "mammoth"] {
-            for &b in &["intrepidly", "frigid", "spa", "cardigans",
-                        "guileful", "evaporated", "unenthusiastic", "legitimate"] {
+        for &a in &[
+            "indiscretions",
+            "validity",
+            "hallucinogenics",
+            "timelessness",
+            "original",
+            "microcosms",
+            "boilers",
+            "mammoth",
+        ] {
+            for &b in &[
+                "intrepidly",
+                "frigid",
+                "spa",
+                "cardigans",
+                "guileful",
+                "evaporated",
+                "unenthusiastic",
+                "legitimate",
+            ] {
                 let ta = a.to_tendril();
                 let tb = b.to_tendril();
 
@@ -2100,9 +2250,17 @@ mod test {
         assert_eq!("Hello", &*t);
         t.extend(&[", ".to_tendril(), "world".to_tendril(), "!".to_tendril()]);
         assert_eq!("Hello, world!", &*t);
-        assert_eq!("Hello, world!", &*["Hello".to_tendril(), ", ".to_tendril(),
-                                       "world".to_tendril(), "!".to_tendril()]
-                                    .iter().collect::<StrTendril>());
+        assert_eq!(
+            "Hello, world!",
+            &*[
+                "Hello".to_tendril(),
+                ", ".to_tendril(),
+                "world".to_tendril(),
+                "!".to_tendril()
+            ]
+            .iter()
+            .collect::<StrTendril>()
+        );
 
         // &str
         let mut t = "Hello".to_tendril();
@@ -2110,18 +2268,36 @@ mod test {
         assert_eq!("Hello", &*t);
         t.extend([", ", "world", "!"].iter().map(|&s| s));
         assert_eq!("Hello, world!", &*t);
-        assert_eq!("Hello, world!", &*["Hello", ", ", "world", "!"]
-                                    .iter().map(|&s| s).collect::<StrTendril>());
+        assert_eq!(
+            "Hello, world!",
+            &*["Hello", ", ", "world", "!"]
+                .iter()
+                .map(|&s| s)
+                .collect::<StrTendril>()
+        );
 
         // &[u8]
         let mut t = b"Hello".to_tendril();
         t.extend(None::<&[u8]>.into_iter());
         assert_eq!(b"Hello", &*t);
-        t.extend([b", ".as_ref(), b"world".as_ref(), b"!".as_ref()].iter().map(|&s| s));
+        t.extend(
+            [b", ".as_ref(), b"world".as_ref(), b"!".as_ref()]
+                .iter()
+                .map(|&s| s),
+        );
         assert_eq!(b"Hello, world!", &*t);
-        assert_eq!(b"Hello, world!", &*[b"Hello".as_ref(), b", ".as_ref(),
-                                        b"world".as_ref(), b"!".as_ref()]
-                                    .iter().map(|&s| s).collect::<ByteTendril>());
+        assert_eq!(
+            b"Hello, world!",
+            &*[
+                b"Hello".as_ref(),
+                b", ".as_ref(),
+                b"world".as_ref(),
+                b"!".as_ref()
+            ]
+            .iter()
+            .map(|&s| s)
+            .collect::<ByteTendril>()
+        );
 
         let string = "the quick brown fox jumps over the lazy dog";
         let string_expected = string.to_tendril();
@@ -2209,7 +2385,9 @@ mod test {
             assert_eq!("this is a string extended", &*t);
             assert!(t.as_ptr() as usize != sp);
             assert!(!t.is_shared());
-        }).join().unwrap();
+        })
+        .join()
+        .unwrap();
         assert!(s.is_shared());
         assert_eq!("this is a string", &*s);
     }
@@ -2224,7 +2402,9 @@ mod test {
             let s = StrTendril::from(s2);
             assert!(!s.is_shared());
             assert_eq!("this is a string", &*s);
-        }).join().unwrap();
+        })
+        .join()
+        .unwrap();
         assert_eq!("this is a string", &*t);
     }
 
@@ -2237,7 +2417,9 @@ mod test {
             let s = StrTendril::from(s2);
             assert!(!s.is_shared());
             assert_eq!("x", &*s);
-        }).join().unwrap();
+        })
+        .join()
+        .unwrap();
         assert_eq!("x", &*t);
     }
 }

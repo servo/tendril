@@ -5,17 +5,22 @@
 // except according to those terms.
 
 use fmt;
-use tendril::{Tendril, Atomicity};
+use tendril::{Atomicity, Tendril};
 use utf8;
 
 pub struct IncompleteUtf8(utf8::Incomplete);
 
-impl<A> Tendril<fmt::Bytes, A> where A: Atomicity {
+impl<A> Tendril<fmt::Bytes, A>
+where
+    A: Atomicity,
+{
     pub fn decode_utf8_lossy<F>(mut self, mut push_utf8: F) -> Option<IncompleteUtf8>
-    where F: FnMut(Tendril<fmt::UTF8, A>) {
+    where
+        F: FnMut(Tendril<fmt::UTF8, A>),
+    {
         loop {
             if self.is_empty() {
-                return None
+                return None;
             }
             let unborrowed_result = match utf8::decode(&self) {
                 Ok(s) => {
@@ -23,12 +28,22 @@ impl<A> Tendril<fmt::Bytes, A> where A: Atomicity {
                     debug_assert!(s.len() == self.len());
                     Ok(())
                 }
-                Err(utf8::DecodeError::Invalid { valid_prefix, invalid_sequence, .. }) => {
+                Err(utf8::DecodeError::Invalid {
+                    valid_prefix,
+                    invalid_sequence,
+                    ..
+                }) => {
                     debug_assert!(valid_prefix.as_ptr() == self.as_ptr());
                     debug_assert!(valid_prefix.len() <= self.len());
-                    Err((valid_prefix.len(), Err(valid_prefix.len() + invalid_sequence.len())))
+                    Err((
+                        valid_prefix.len(),
+                        Err(valid_prefix.len() + invalid_sequence.len()),
+                    ))
                 }
-                Err(utf8::DecodeError::Incomplete { valid_prefix, incomplete_suffix }) => {
+                Err(utf8::DecodeError::Incomplete {
+                    valid_prefix,
+                    incomplete_suffix,
+                }) => {
                     debug_assert!(valid_prefix.as_ptr() == self.as_ptr());
                     debug_assert!(valid_prefix.len() <= self.len());
                     Err((valid_prefix.len(), Ok(incomplete_suffix)))
@@ -36,17 +51,13 @@ impl<A> Tendril<fmt::Bytes, A> where A: Atomicity {
             };
             match unborrowed_result {
                 Ok(()) => {
-                    unsafe {
-                        push_utf8(self.reinterpret_without_validating())
-                    }
-                    return None
+                    unsafe { push_utf8(self.reinterpret_without_validating()) }
+                    return None;
                 }
                 Err((valid_len, and_then)) => {
                     if valid_len > 0 {
                         let subtendril = self.subtendril(0, valid_len as u32);
-                        unsafe {
-                            push_utf8(subtendril.reinterpret_without_validating())
-                        }
+                        unsafe { push_utf8(subtendril.reinterpret_without_validating()) }
                     }
                     match and_then {
                         Ok(incomplete) => return Some(IncompleteUtf8(incomplete)),
@@ -62,14 +73,22 @@ impl<A> Tendril<fmt::Bytes, A> where A: Atomicity {
 }
 
 impl IncompleteUtf8 {
-    pub fn try_complete<A, F>(&mut self, mut input: Tendril<fmt::Bytes, A>, mut push_utf8: F)
-                              -> Result<Tendril<fmt::Bytes, A>, ()>
-    where A: Atomicity, F: FnMut(Tendril<fmt::UTF8, A>) {
+    pub fn try_complete<A, F>(
+        &mut self,
+        mut input: Tendril<fmt::Bytes, A>,
+        mut push_utf8: F,
+    ) -> Result<Tendril<fmt::Bytes, A>, ()>
+    where
+        A: Atomicity,
+        F: FnMut(Tendril<fmt::UTF8, A>),
+    {
         let resume_at;
         match self.0.try_complete(&input) {
             None => return Err(()),
             Some((result, rest)) => {
-                push_utf8(Tendril::from_slice(result.unwrap_or(utf8::REPLACEMENT_CHARACTER)));
+                push_utf8(Tendril::from_slice(
+                    result.unwrap_or(utf8::REPLACEMENT_CHARACTER),
+                ));
                 resume_at = input.len() - rest.len();
             }
         }

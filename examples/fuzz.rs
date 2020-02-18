@@ -13,8 +13,8 @@ extern crate tendril;
 
 use std::borrow::ToOwned;
 
-use rand::Rng;
 use rand::distributions::{IndependentSample, Range};
+use rand::Rng;
 use tendril::StrTendril;
 
 fn fuzz() {
@@ -25,7 +25,7 @@ fn fuzz() {
     let mut string_slices = vec![];
     let mut tendril_slices = vec![];
 
-    for _ in 1 .. 100_000 {
+    for _ in 1..100_000 {
         if buf_string.len() > (1 << 30) {
             buf_string.truncate(0);
             buf_tendril.clear();
@@ -96,7 +96,10 @@ fn fuzz() {
                 string_slices.push(buf_string[start..end].to_owned());
                 tendril_slices.push(buf_tendril.subtendril(start as u32, (end - start) as u32));
                 assert_eq!(string_slices.len(), tendril_slices.len());
-                assert!(string_slices.iter().zip(tendril_slices.iter()).all(|(s,t)| **s == **t));
+                assert!(string_slices
+                    .iter()
+                    .zip(tendril_slices.iter())
+                    .all(|(s, t)| **s == **t));
             }
         }
     }
@@ -104,7 +107,7 @@ fn fuzz() {
 
 fn random_boundary<R: Rng>(rng: &mut R, text: &str) -> usize {
     loop {
-        let i = Range::new(0, text.len()+1).ind_sample(rng);
+        let i = Range::new(0, text.len() + 1).ind_sample(rng);
         if text.is_char_boundary(i) {
             return i;
         }
@@ -113,8 +116,8 @@ fn random_boundary<R: Rng>(rng: &mut R, text: &str) -> usize {
 
 fn random_slice<R: Rng>(rng: &mut R, text: &str) -> (usize, usize) {
     loop {
-        let start = Range::new(0, text.len()+1).ind_sample(rng);
-        let end = Range::new(start, text.len()+1).ind_sample(rng);
+        let start = Range::new(0, text.len() + 1).ind_sample(rng);
+        let end = Range::new(start, text.len() + 1).ind_sample(rng);
         if !text.is_char_boundary(start) {
             continue;
         }
