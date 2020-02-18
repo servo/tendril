@@ -92,7 +92,7 @@ pub trait TendrilSink<F, A=NonAtomic>
     /// then finish. Return `Err` at the first I/O error.
     fn from_file<P>(self, path: P) -> io::Result<Self::Output>
     where Self: Sized, P: AsRef<Path>, F: fmt::SliceFormat<Slice=[u8]> {
-        self.read_from(&mut try!(File::open(path)))
+        self.read_from(&mut File::open(path)?)
     }
 }
 

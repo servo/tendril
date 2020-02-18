@@ -33,7 +33,7 @@ fn fuzz() {
 
         let dist_action = Range::new(0, 100);
         match dist_action.ind_sample(&mut rng) {
-            0...15 => {
+            0..=15 => {
                 let (start, end) = random_slice(&mut rng, TEXT);
                 let snip = &TEXT[start..end];
                 buf_string.push_str(snip);
@@ -41,7 +41,7 @@ fn fuzz() {
                 assert_eq!(&*buf_string, &*buf_tendril);
             }
 
-            16...31 => {
+            16..=31 => {
                 let (start, end) = random_slice(&mut rng, &buf_string);
                 let snip = &buf_string[start..end].to_owned();
                 buf_string.push_str(&snip);
@@ -49,21 +49,21 @@ fn fuzz() {
                 assert_eq!(&*buf_string, &*buf_tendril);
             }
 
-            32...47 => {
+            32..=47 => {
                 let lenstr = format!("[length = {}]", buf_tendril.len());
                 buf_string.push_str(&lenstr);
                 buf_tendril.push_slice(&lenstr);
                 assert_eq!(&*buf_string, &*buf_tendril);
             }
 
-            48...63 => {
+            48..=63 => {
                 let n = random_boundary(&mut rng, &buf_string);
                 buf_tendril.pop_front(n as u32);
                 buf_string = buf_string[n..].to_owned();
                 assert_eq!(&*buf_string, &*buf_tendril);
             }
 
-            64...79 => {
+            64..=79 => {
                 let new_len = random_boundary(&mut rng, &buf_string);
                 let n = buf_string.len() - new_len;
                 buf_string.truncate(new_len);
@@ -71,14 +71,14 @@ fn fuzz() {
                 assert_eq!(&*buf_string, &*buf_tendril);
             }
 
-            80...90 => {
+            80..=90 => {
                 let (start, end) = random_slice(&mut rng, &buf_string);
                 buf_string = buf_string[start..end].to_owned();
                 buf_tendril = buf_tendril.subtendril(start as u32, (end - start) as u32);
                 assert_eq!(&*buf_string, &*buf_tendril);
             }
 
-            91...96 => {
+            91..=96 => {
                 let c = rng.gen();
                 buf_string.push(c);
                 assert!(buf_tendril.try_push_char(c).is_ok());
