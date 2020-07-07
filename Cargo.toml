@@ -13,7 +13,7 @@ description = "Compact buffer/string type for zero-copy parsing"
 mac = "0.1"
 encoding = {version = "0.2", optional = true}
 encoding_rs = {version = "0.8.12", optional = true}
-futf = "0.1.1"
+futf = "0.1.2"
 utf-8 = "0.7"
 
 [dev-dependencies]
