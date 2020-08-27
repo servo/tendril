@@ -5,7 +5,7 @@
 // except according to those terms.
 
 use std::borrow::Borrow;
-use std::cell::Cell;
+use std::cell::{Cell, UnsafeCell};
 use std::cmp::Ordering;
 use std::default::Default;
 use std::fmt as strfmt;
@@ -15,7 +15,7 @@ use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::atomic::{self, AtomicUsize};
-use std::{hash, io, mem, ptr, slice, str, u32};
+use std::{hash, io, mem, ptr, str, u32};
 
 #[cfg(feature = "encoding")]
 use encoding::{self, DecoderTrap, EncoderTrap, EncodingRef};
@@ -68,25 +68,30 @@ pub unsafe trait Atomicity: 'static {
 /// and so doesn't typically need to be written.
 ///
 /// This is akin to using `Rc` for reference counting.
-pub struct NonAtomic(Cell<usize>);
+#[repr(C)]
+pub struct NonAtomic(Cell<PackedUsize>);
+
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+struct PackedUsize(usize);
 
 unsafe impl Atomicity for NonAtomic {
     #[inline]
     fn new() -> Self {
-        NonAtomic(Cell::new(1))
+        NonAtomic(Cell::new(PackedUsize(1)))
     }
 
     #[inline]
     fn increment(&self) -> usize {
-        let value = self.0.get();
-        self.0.set(value.checked_add(1).expect(OFLOW));
+        let value = self.0.get().0;
+        self.0.set(PackedUsize(value.checked_add(1).expect(OFLOW)));
         value
     }
 
     #[inline]
     fn decrement(&self) -> usize {
-        let value = self.0.get();
-        self.0.set(value - 1);
+        let value = self.0.get().0;
+        self.0.set(PackedUsize(value - 1));
         value
     }
 
@@ -125,7 +130,6 @@ unsafe impl Atomicity for Atomic {
     }
 }
 
-#[repr(packed)]
 struct Header<A: Atomicity> {
     refcount: A,
     cap: u32,
@@ -186,10 +190,22 @@ where
     A: Atomicity,
 {
     ptr: Cell<NonZeroUsize>,
-    len: u32,
-    aux: Cell<u32>,
+    buf: UnsafeCell<Buffer>,
     marker: PhantomData<*mut F>,
     refcount_marker: PhantomData<A>,
+}
+
+#[repr(C)]
+union Buffer {
+    heap: Heap,
+    inline: [u8; 8],
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+struct Heap {
+    len: u32,
+    aux: u32,
 }
 
 unsafe impl<F, A> Send for Tendril<F, A>
@@ -587,7 +603,7 @@ where
         match self.ptr.get().get() {
             EMPTY_TAG => 0,
             n if n <= MAX_INLINE_LEN => n as u32,
-            _ => self.len,
+            _ => unsafe { self.raw_len() },
         }
     }
 
@@ -619,7 +635,7 @@ where
                 // No need to keep a reference alive for a 0-size slice.
                 *self = Tendril::new();
             } else {
-                self.len = 0;
+                unsafe { self.set_len(0) };
             }
         }
     }
@@ -759,9 +775,9 @@ where
                 if self_shared
                     && other_shared
                     && (self_buf.data_ptr() == other_buf.data_ptr())
-                    && (other.aux.get() == self.aux.get() + self.len)
+                    && other.aux() == self.aux() + self.raw_len()
                 {
-                    self.len = new_len;
+                    self.set_len(new_len);
                     return;
                 }
             }
@@ -958,7 +974,7 @@ where
                 &mut dest,
                 unsafe_slice(buf, drop_right, buf.len() - drop_right),
             );
-            self.len = new_len;
+            self.set_len(new_len);
         }
     }
 
@@ -977,7 +993,7 @@ where
             self.make_buf_shared();
             self.incref();
             let (buf, _, _) = self.assume_buf();
-            Tendril::shared(buf, self.aux.get() + offset, length)
+            Tendril::shared(buf, self.aux() + offset, length)
         }
     }
 
@@ -995,8 +1011,9 @@ where
             ));
         } else {
             self.make_buf_shared();
-            self.aux.set(self.aux.get() + n);
-            self.len -= n;
+            self.set_aux(self.aux() + n);
+            let len = self.raw_len();
+            self.set_len(len - n);
         }
     }
 
@@ -1010,7 +1027,8 @@ where
             *self = Tendril::inline(unsafe_slice(self.as_byte_slice(), 0, new_len as usize));
         } else {
             self.make_buf_shared();
-            self.len -= n;
+            let len = self.raw_len();
+            self.set_len(len - n);
         }
     }
 
@@ -1024,10 +1042,10 @@ where
         let p = self.ptr.get().get();
         if p & 1 == 0 {
             let header = p as *mut Header<A>;
-            (*header).cap = self.aux.get();
+            (*header).cap = self.aux();
 
             self.ptr.set(NonZeroUsize::new_unchecked(p | 1));
-            self.aux.set(0);
+            self.set_aux(0);
         }
     }
 
@@ -1050,7 +1068,7 @@ where
         let mut buf = self.assume_buf().0;
         buf.grow(cap);
         self.ptr.set(NonZeroUsize::new_unchecked(buf.ptr as usize));
-        self.aux.set(buf.cap);
+        self.set_aux(buf.cap);
     }
 
     #[inline(always)]
@@ -1064,8 +1082,8 @@ where
         let header = self.header();
         let shared = (ptr & 1) == 1;
         let (cap, offset) = match shared {
-            true => ((*header).cap, self.aux.get()),
-            false => (self.aux.get(), 0),
+            true => ((*header).cap, self.aux()),
+            false => (self.aux(), 0),
         };
 
         (
@@ -1082,14 +1100,13 @@ where
     #[inline]
     unsafe fn inline(x: &[u8]) -> Tendril<F, A> {
         let len = x.len();
-        let mut t = Tendril {
+        let t = Tendril {
             ptr: Cell::new(inline_tag(len as u32)),
-            len: 0,
-            aux: Cell::new(0),
+            buf: UnsafeCell::new(Buffer { inline: [0; 8] }),
             marker: PhantomData,
             refcount_marker: PhantomData,
         };
-        ptr::copy_nonoverlapping(x.as_ptr(), &mut t.len as *mut u32 as *mut u8, len);
+        ptr::copy_nonoverlapping(x.as_ptr(), (*t.buf.get()).inline.as_mut_ptr(), len);
         t
     }
 
@@ -1097,8 +1114,12 @@ where
     unsafe fn owned(x: Buf32<Header<A>>) -> Tendril<F, A> {
         Tendril {
             ptr: Cell::new(NonZeroUsize::new_unchecked(x.ptr as usize)),
-            len: x.len,
-            aux: Cell::new(x.cap),
+            buf: UnsafeCell::new(Buffer {
+                heap: Heap {
+                    len: x.len,
+                    aux: x.cap,
+                },
+            }),
             marker: PhantomData,
             refcount_marker: PhantomData,
         }
@@ -1117,8 +1138,9 @@ where
     unsafe fn shared(buf: Buf32<Header<A>>, off: u32, len: u32) -> Tendril<F, A> {
         Tendril {
             ptr: Cell::new(NonZeroUsize::new_unchecked((buf.ptr as usize) | 1)),
-            len: len,
-            aux: Cell::new(off),
+            buf: UnsafeCell::new(Buffer {
+                heap: Heap { len, aux: off },
+            }),
             marker: PhantomData,
             refcount_marker: PhantomData,
         }
@@ -1129,9 +1151,7 @@ where
         unsafe {
             match self.ptr.get().get() {
                 EMPTY_TAG => &[],
-                n if n <= MAX_INLINE_LEN => {
-                    slice::from_raw_parts(&self.len as *const u32 as *const u8, n)
-                }
+                n if n <= MAX_INLINE_LEN => (*self.buf.get()).inline.get_unchecked(..n),
                 _ => {
                     let (buf, _, offset) = self.assume_buf();
                     copy_lifetime(
@@ -1150,9 +1170,7 @@ where
         unsafe {
             match self.ptr.get().get() {
                 EMPTY_TAG => &mut [],
-                n if n <= MAX_INLINE_LEN => {
-                    slice::from_raw_parts_mut(&mut self.len as *mut u32 as *mut u8, n)
-                }
+                n if n <= MAX_INLINE_LEN => (*self.buf.get()).inline.get_unchecked_mut(..n),
                 _ => {
                     self.make_owned();
                     let (mut buf, _, offset) = self.assume_buf();
@@ -1161,6 +1179,22 @@ where
                 }
             }
         }
+    }
+
+    unsafe fn raw_len(&self) -> u32 {
+        (*self.buf.get()).heap.len
+    }
+
+    unsafe fn set_len(&mut self, len: u32) {
+        (*self.buf.get()).heap.len = len;
+    }
+
+    unsafe fn aux(&self) -> u32 {
+        (*self.buf.get()).heap.aux
+    }
+
+    unsafe fn set_aux(&self, aux: u32) {
+        (*self.buf.get()).heap.aux = aux;
     }
 }
 
@@ -1460,7 +1494,7 @@ where
             self.ptr.set(inline_tag(new_len))
         } else {
             self.make_owned_with_capacity(new_len);
-            self.len = new_len;
+            self.set_len(new_len);
         }
     }
 }
@@ -1673,9 +1707,14 @@ mod test {
         assert_eq!(correct, mem::size_of::<Option<ByteTendril>>());
         assert_eq!(correct, mem::size_of::<Option<StrTendril>>());
 
-        let correct_header = mem::size_of::<*const ()>() + 4;
-        assert_eq!(correct_header, mem::size_of::<Header<Atomic>>());
-        assert_eq!(correct_header, mem::size_of::<Header<NonAtomic>>());
+        assert_eq!(
+            mem::size_of::<*const ()>() * 2,
+            mem::size_of::<Header<Atomic>>(),
+        );
+        assert_eq!(
+            mem::size_of::<*const ()>() + 4,
+            mem::size_of::<Header<NonAtomic>>(),
+        );
     }
 
     #[test]
@@ -2339,6 +2378,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // slow
     fn read() {
         fn check(x: &[u8]) {
             use std::io::Cursor;
