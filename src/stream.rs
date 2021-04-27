@@ -6,8 +6,8 @@
 
 //! Streams of tendrils.
 
-use fmt;
-use tendril::{Atomicity, NonAtomic, Tendril};
+use crate::fmt;
+use crate::tendril::{Atomicity, NonAtomic, Tendril};
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -465,9 +465,9 @@ fn decode_to_sink<Sink, A>(
 #[cfg(test)]
 mod test {
     use super::{TendrilSink, Utf8LossyDecoder};
-    use fmt;
+    use crate::fmt;
+    use crate::tendril::{Atomicity, NonAtomic, Tendril};
     use std::borrow::Cow;
-    use tendril::{Atomicity, NonAtomic, Tendril};
 
     #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
     use super::LossyDecoder;
