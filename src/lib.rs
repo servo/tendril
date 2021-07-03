@@ -32,4 +32,4 @@ mod tendril;
 mod utf8_decode;
 mod util;
 
-static OFLOW: &'static str = "tendril: overflow in buffer arithmetic";
+static OFLOW: &str = "tendril: overflow in buffer arithmetic";

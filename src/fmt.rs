@@ -20,7 +20,7 @@
 //! `unsafe impl`.
 
 use std::default::Default;
-use std::{char, mem, str};
+use std::{char, str};
 
 use futf::{self, Codepoint, Meaning};
 
@@ -30,7 +30,7 @@ use futf::{self, Codepoint, Meaning};
 /// a new format.
 pub mod imp {
     use std::default::Default;
-    use std::{iter, mem, slice};
+    use std::{iter, slice};
 
     /// Describes how to fix up encodings when concatenating.
     ///
@@ -57,7 +57,7 @@ pub mod imp {
 
     #[inline(always)]
     unsafe fn from_u32_unchecked(n: u32) -> char {
-        mem::transmute(n)
+        std::char::from_u32(n).unwrap()
     }
 
     pub struct SingleByteCharIndices<'a> {
@@ -123,6 +123,7 @@ pub unsafe trait Format {
     ///
     /// The default is to do nothing.
     ///
+    /// # Safety
     /// The function is `unsafe` because it may assume the input
     /// buffers are already valid for the format. Also, no
     /// bounds-checking is performed on the return value!
@@ -167,6 +168,7 @@ pub unsafe trait CharFormat<'a>: Format {
     /// Iterate over the characters of the string and their byte
     /// indices.
     ///
+    /// # Safety
     /// You may assume the buffer is *already validated* for `Format`.
     unsafe fn char_indices(buf: &'a [u8]) -> Self::Iter;
 
@@ -185,12 +187,14 @@ pub unsafe trait Slice {
 
     /// Convert a byte slice to this kind of slice.
     ///
+    /// # Safety
     /// You may assume the buffer is *already validated*
     /// for `Format`.
     unsafe fn from_bytes(x: &[u8]) -> &Self;
 
     /// Convert a byte slice to this kind of slice.
     ///
+    /// # Safety
     /// You may assume the buffer is *already validated*
     /// for `Format`.
     unsafe fn from_mut_bytes(x: &mut [u8]) -> &mut Self;
@@ -293,30 +297,24 @@ unsafe impl Format for UTF8 {
 
     #[inline]
     fn validate_prefix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
-        match futf::classify(buf, buf.len() - 1) {
-            Some(Codepoint {
+         matches!(futf::classify(buf, buf.len() - 1), Some(Codepoint {
                 meaning: Meaning::Whole(_),
                 ..
-            }) => true,
-            _ => false,
-        }
+            }))
     }
 
     #[inline]
     fn validate_suffix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
-        match futf::classify(buf, 0) {
-            Some(Codepoint {
+        matches!(futf::classify(buf, 0), Some(Codepoint {
                 meaning: Meaning::Whole(_),
                 ..
-            }) => true,
-            _ => false,
-        }
+            }))
     }
 
     #[inline]
@@ -344,7 +342,7 @@ unsafe impl Slice for str {
 
     #[inline(always)]
     unsafe fn from_mut_bytes(x: &mut [u8]) -> &mut str {
-        mem::transmute(x)
+        std::str::from_utf8_mut(x).unwrap()
     }
 }
 
@@ -374,10 +372,7 @@ pub struct WTF8;
 
 #[inline]
 fn wtf8_meaningful(m: Meaning) -> bool {
-    match m {
-        Meaning::Whole(_) | Meaning::LeadSurrogate(_) | Meaning::TrailSurrogate(_) => true,
-        _ => false,
-    }
+    matches!(m, Meaning::Whole(_) | Meaning::LeadSurrogate(_) | Meaning::TrailSurrogate(_))
 }
 
 unsafe impl Format for WTF8 {
@@ -403,7 +398,7 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     fn validate_prefix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
         match futf::classify(buf, buf.len() - 1) {
@@ -414,7 +409,7 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     fn validate_suffix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
         match futf::classify(buf, 0) {
@@ -430,7 +425,7 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     unsafe fn fixup(lhs: &[u8], rhs: &[u8]) -> imp::Fixup {
-        const ERR: &'static str = "WTF8: internal error";
+        const ERR: &str = "WTF8: internal error";
 
         if lhs.len() >= 3 && rhs.len() >= 3 {
             if let (

@@ -44,8 +44,8 @@ fn fuzz() {
             16..=31 => {
                 let (start, end) = random_slice(&mut rng, &buf_string);
                 let snip = &buf_string[start..end].to_owned();
-                buf_string.push_str(&snip);
-                buf_tendril.push_slice(&snip);
+                buf_string.push_str(snip);
+                buf_tendril.push_slice(snip);
                 assert_eq!(&*buf_string, &*buf_tendril);
             }
 
@@ -128,7 +128,7 @@ fn random_slice<R: Rng>(rng: &mut R, text: &str) -> (usize, usize) {
     }
 }
 
-static TEXT: &'static str =
+static TEXT: &str =
     "It was from the artists and poets that the pertinent answers came, and I \
      know that panic would have broken loose had they been able to compare notes. \
      As it was, lacking their original letters, I half suspected the compiler of \
