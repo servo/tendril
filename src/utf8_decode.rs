@@ -4,10 +4,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use fmt;
-use tendril::{Atomicity, Tendril};
-use utf8;
+use crate::fmt;
+use crate::tendril::{Atomicity, Tendril};
 
+#[derive(Copy, Clone, Debug)]
 pub struct IncompleteUtf8(utf8::Incomplete);
 
 impl<A> Tendril<fmt::Bytes, A>
@@ -63,7 +63,7 @@ where
                         Ok(incomplete) => return Some(IncompleteUtf8(incomplete)),
                         Err(offset) => {
                             push_utf8(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
-                            self.pop_front(offset as u32)
+                            self.pop_front(offset as u32);
                         }
                     }
                 }

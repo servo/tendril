@@ -8,7 +8,7 @@
 
 use std::{mem, ptr, slice, u32};
 
-use OFLOW;
+use crate::OFLOW;
 
 pub const MIN_CAP: u32 = 16;
 
@@ -43,11 +43,7 @@ impl<H> Buf32<H> {
         mem::forget(vec);
         ptr::write(ptr, h);
 
-        Buf32 {
-            ptr: ptr,
-            len: 0,
-            cap: cap,
-        }
+        Buf32 { ptr, len: 0, cap }
     }
 
     #[inline]
@@ -61,7 +57,7 @@ impl<H> Buf32<H> {
 
     #[inline(always)]
     pub unsafe fn data_ptr(&self) -> *mut u8 {
-        (self.ptr as *mut u8).offset(mem::size_of::<H>() as isize)
+        (self.ptr as *mut u8).add(mem::size_of::<H>())
     }
 
     #[inline(always)]
@@ -100,7 +96,7 @@ mod test {
     #[test]
     fn smoke_test() {
         unsafe {
-            let mut b = Buf32::with_capacity(0, 0u8);
+            let mut b = Buf32::with_capacity(0, 0_u8);
             assert_eq!(b"", b.data());
 
             b.grow(5);
