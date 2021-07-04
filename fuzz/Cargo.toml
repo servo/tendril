@@ -1,0 +1,41 @@
+
+[package]
+name = "tendril-fuzz"
+version = "0.0.1"
+authors = ["Automatically generated"]
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies.tendril]
+path = ".."
+[dependencies.libfuzzer-sys]
+git = "https://github.com/rust-fuzz/libfuzzer-sys.git"
+
+[dependencies]
+rand = "0.4"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "string_bytes_eq_tendril"
+path = "fuzz_targets/string_bytes_eq_tendril.rs"
+
+[[bin]]
+name = "pop_front"
+path = "fuzz_targets/pop_front.rs"
+
+[[bin]]
+name = "pop_back"
+path = "fuzz_targets/pop_back.rs"
+
+[[bin]]
+name = "subtendril"
+path = "fuzz_targets/subtendril.rs"
+
+[[bin]]
+name = "try_push_char"
+path = "fuzz_targets/try_push_char.rs"
