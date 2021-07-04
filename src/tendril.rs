@@ -980,6 +980,7 @@ where
 
     /// Slice this `Tendril` as a new `Tendril`.
     ///
+    /// # Safety
     /// Does not check validity or bounds!
     #[inline]
     pub unsafe fn unsafe_subtendril(&self, offset: u32, length: u32) -> Tendril<F, A> {
@@ -999,6 +1000,7 @@ where
 
     /// Drop `n` bytes from the front.
     ///
+    /// # Safety
     /// Does not check validity or bounds!
     #[inline]
     pub unsafe fn unsafe_pop_front(&mut self, n: u32) {
@@ -1019,6 +1021,7 @@ where
 
     /// Drop `n` bytes from the back.
     ///
+    /// # Safety
     /// Does not check validity or bounds!
     #[inline]
     pub unsafe fn unsafe_pop_back(&mut self, n: u32) {
@@ -1090,7 +1093,7 @@ where
             Buf32 {
                 ptr: header,
                 len: offset + self.len32(),
-                cap: cap,
+                cap,
             },
             shared,
             offset,
@@ -1147,7 +1150,7 @@ where
     }
 
     #[inline]
-    fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
+    fn as_byte_slice(&self) -> &[u8] {
         unsafe {
             match self.ptr.get().get() {
                 EMPTY_TAG => &[],
@@ -1166,7 +1169,7 @@ where
     // There's no need to worry about locking on an atomic Tendril, because it makes it unique as
     // soon as you do that.
     #[inline]
-    fn as_mut_byte_slice<'a>(&'a mut self) -> &'a mut [u8] {
+    fn as_mut_byte_slice(&mut self) -> &mut [u8] {
         unsafe {
             match self.ptr.get().get() {
                 EMPTY_TAG => &mut [],
@@ -1286,7 +1289,7 @@ where
 {
     /// Remove and return the first character, if any.
     #[inline]
-    pub fn pop_front_char<'a>(&'a mut self) -> Option<char> {
+    pub fn pop_front_char(&mut self) -> Option<char> {
         unsafe {
             let next_char; // first char in iterator
             let mut skip = 0; // number of bytes to skip, or 0 to clear
@@ -1326,7 +1329,7 @@ where
     ///
     /// Returns `None` on an empty string.
     #[inline]
-    pub fn pop_front_char_run<'a, C, R>(&'a mut self, mut classify: C) -> Option<(Tendril<F, A>, R)>
+    pub fn pop_front_char_run<C, R>(&mut self, mut classify: C) -> Option<(Tendril<F, A>, R)>
     where
         C: FnMut(char) -> R,
         R: PartialEq,

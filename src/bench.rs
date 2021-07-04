@@ -9,10 +9,10 @@ use std::collections::hash_map::{Entry, HashMap};
 
 use tendril::StrTendril;
 
-fn index_words_string(input: &String) -> HashMap<char, Vec<String>> {
+fn index_words_string(input: &str) -> HashMap<char, Vec<String>> {
     let mut index = HashMap::new();
     for word in input.split(|c| c == ' ') {
-        if word.len() == 0 {
+        if word.is_empty() {
             continue;
         }
         let word = word.to_owned();
@@ -48,9 +48,9 @@ fn index_words_tendril(input: &StrTendril) -> HashMap<char, Vec<StrTendril>> {
     }
 }
 
-static EN_1: &'static str = "Days turn to nights turn to paper into rocks into plastic";
+static EN_1: &str = "Days turn to nights turn to paper into rocks into plastic";
 
-static EN_2: &'static str =
+static EN_2: &str =
     "Here the notes in my laboratory journal cease. I was able to write the last \
        words only with great effort. By now it was already clear to me that LSD had \
        been the cause of the remarkable experience of the previous Friday, for the \
@@ -67,12 +67,12 @@ static EN_2: &'static str =
        In spite of my delirious, bewildered condition, I had brief periods of clear \
        and effective thinking—and chose milk as a nonspecific antidote for poisoning.";
 
-static KR_1: &'static str =
+static KR_1: &str =
     "러스트(Rust)는 모질라(mozilla.org)에서 개발하고 있는, 메모리-안전하고 병렬 \
        프로그래밍이 쉬운 차세대 프로그래밍 언어입니다. 아직 \
        개발 단계이며 많은 기능이 구현 중으로, MIT/Apache2 라이선스로 배포됩니다.";
 
-static HTML_KR_1: &'static str =
+static HTML_KR_1: &str =
     "<p>러스트(<a href=\"http://rust-lang.org\">Rust</a>)는 모질라(<a href=\"\
        https://www.mozilla.org/\">mozilla.org</a>)에서 개발하고 있는, \
        메모리-안전하고 병렬 프로그래밍이 쉬운 차세대 프로그래밍 언어입니다. \
@@ -132,12 +132,12 @@ mod index_words {
                     let input_string = txt.to_owned();
                     let count_s = index_words_string(&input_string);
                     let mut keys: Vec<char> = count_s.keys().cloned().collect();
-                    keys.sort();
+                    keys.sort_unstable();
 
                     let input_tendril = txt.to_tendril();
                     let count_t = index_words_tendril(&input_tendril);
                     let mut keys_t: Vec<char> = count_t.keys().cloned().collect();
-                    keys_t.sort();
+                    keys_t.sort_unstable();
 
                     assert_eq!(keys, keys_t);
 
