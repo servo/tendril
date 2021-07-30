@@ -4,6 +4,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![deny(
+    rust_2018_compatibility,
+    rust_2018_idioms,
+    future_incompatible,
+    nonstandard_style,
+    unused,
+    missing_copy_implementations,
+    missing_abi,
+    clippy::doc_markdown,
+    clippy::must_use_candidate,
+    clippy::wildcard_imports,
+    clippy::cloned_instead_of_copied,
+    clippy::unreadable_literal,
+    clippy::unseparated_literal_suffix
+)]
 #![cfg_attr(all(test, feature = "bench"), feature(test))]
 //#![cfg_attr(test, deny(warnings))]
 
@@ -15,14 +30,12 @@ pub extern crate encoding_rs;
 extern crate test;
 #[macro_use]
 extern crate mac;
-extern crate futf;
-extern crate utf8;
 
-pub use fmt::Format;
-pub use stream::TendrilSink;
-pub use tendril::{Atomic, Atomicity, NonAtomic, SendTendril};
-pub use tendril::{ByteTendril, ReadExt, SliceExt, StrTendril, SubtendrilError, Tendril};
-pub use utf8_decode::IncompleteUtf8;
+pub use crate::fmt::Format;
+pub use crate::stream::TendrilSink;
+pub use crate::tendril::{Atomic, Atomicity, NonAtomic, SendTendril};
+pub use crate::tendril::{ByteTendril, ReadExt, SliceExt, StrTendril, SubtendrilError, Tendril};
+pub use crate::utf8_decode::IncompleteUtf8;
 
 pub mod fmt;
 pub mod stream;
@@ -32,4 +45,4 @@ mod tendril;
 mod utf8_decode;
 mod util;
 
-static OFLOW: &'static str = "tendril: overflow in buffer arithmetic";
+static OFLOW: &str = "tendril: overflow in buffer arithmetic";

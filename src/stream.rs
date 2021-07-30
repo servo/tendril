@@ -6,8 +6,8 @@
 
 //! Streams of tendrils.
 
-use fmt;
-use tendril::{Atomicity, NonAtomic, Tendril};
+use crate::fmt;
+use crate::tendril::{Atomicity, NonAtomic, Tendril};
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -120,6 +120,7 @@ where
 ///
 /// This does not allocate memory: the output is either subtendrils on the input,
 /// on inline tendrils for a single code point.
+#[derive(Debug)]
 pub struct Utf8LossyDecoder<Sink, A = NonAtomic>
 where
     Sink: TendrilSink<fmt::UTF8, A>,
@@ -139,7 +140,7 @@ where
     #[inline]
     pub fn new(inner_sink: Sink) -> Self {
         Utf8LossyDecoder {
-            inner_sink: inner_sink,
+            inner_sink,
             incomplete: None,
             marker: PhantomData,
         }
@@ -273,7 +274,7 @@ where
 {
     Utf8(Utf8LossyDecoder<Sink, A>),
     #[cfg(feature = "encoding")]
-    Encoding(Box<encoding::RawDecoder>, Sink),
+    Encoding(Box<dyn encoding::RawDecoder>, Sink),
     #[cfg(feature = "encoding_rs")]
     EncodingRs(encoding_rs::Decoder, Sink),
 }
@@ -297,7 +298,7 @@ where
         }
     }
 
-    /// Create a new incremental decoder using the encoding_rs crate.
+    /// Create a new incremental decoder using the `encoding_rs` crate.
     #[cfg(feature = "encoding_rs")]
     #[inline]
     pub fn new_encoding_rs(encoding: &'static encoding_rs::Encoding, sink: Sink) -> Self {
@@ -352,7 +353,7 @@ where
     #[inline]
     fn process(&mut self, t: Tendril<fmt::Bytes, A>) {
         match self.inner {
-            LossyDecoderInner::Utf8(ref mut utf8) => return utf8.process(t),
+            LossyDecoderInner::Utf8(ref mut utf8) => utf8.process(t),
             #[cfg(feature = "encoding")]
             LossyDecoderInner::Encoding(ref mut decoder, ref mut sink) => {
                 let mut out = Tendril::new();
@@ -399,7 +400,7 @@ where
     #[inline]
     fn finish(self) -> Sink::Output {
         match self.inner {
-            LossyDecoderInner::Utf8(utf8) => return utf8.finish(),
+            LossyDecoderInner::Utf8(utf8) => utf8.finish(),
             #[cfg(feature = "encoding")]
             LossyDecoderInner::Encoding(mut decoder, mut sink) => {
                 let mut out = Tendril::new();
@@ -465,14 +466,14 @@ fn decode_to_sink<Sink, A>(
 #[cfg(test)]
 mod test {
     use super::{TendrilSink, Utf8LossyDecoder};
-    use fmt;
+    use crate::fmt;
+    use crate::tendril::{Atomicity, NonAtomic, Tendril};
     use std::borrow::Cow;
-    use tendril::{Atomicity, NonAtomic, Tendril};
 
     #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
     use super::LossyDecoder;
     #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
-    use tendril::SliceExt;
+    use crate::tendril::SliceExt;
 
     #[cfg(feature = "encoding")]
     use encoding::all as enc;
@@ -520,7 +521,7 @@ mod test {
 
     fn check_utf8(input: &[&[u8]], expected: &[&str], errs: usize) {
         let decoder = Utf8LossyDecoder::new(Accumulate::<NonAtomic>::new());
-        let (tendrils, errors) = decoder.from_iter(input.iter().cloned());
+        let (tendrils, errors) = decoder.from_iter(input.iter().copied());
         assert_eq!(
             expected,
             &*tendrils.iter().map(|t| &**t).collect::<Vec<_>>()

@@ -20,11 +20,13 @@ use std::{hash, io, mem, ptr, str, u32};
 #[cfg(feature = "encoding")]
 use encoding::{self, DecoderTrap, EncoderTrap, EncodingRef};
 
-use buf32::{self, Buf32};
-use fmt::imp::Fixup;
-use fmt::{self, Slice};
-use util::{copy_and_advance, copy_lifetime, copy_lifetime_mut, unsafe_slice, unsafe_slice_mut};
-use OFLOW;
+use crate::buf32::{self, Buf32};
+use crate::fmt::imp::Fixup;
+use crate::fmt::{self, Slice};
+use crate::util::{
+    copy_and_advance, copy_lifetime, copy_lifetime_mut, unsafe_slice, unsafe_slice_mut,
+};
+use crate::OFLOW;
 
 const MAX_INLINE_LEN: usize = 8;
 const MAX_INLINE_TAG: usize = 0xF;
@@ -69,10 +71,11 @@ pub unsafe trait Atomicity: 'static {
 ///
 /// This is akin to using `Rc` for reference counting.
 #[repr(C)]
+#[derive(Debug)]
 pub struct NonAtomic(Cell<PackedUsize>);
 
 #[repr(C, packed)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct PackedUsize(usize);
 
 unsafe impl Atomicity for NonAtomic {
@@ -105,6 +108,7 @@ unsafe impl Atomicity for NonAtomic {
 /// `Tendril<F, Atomic>` thus implements`Send`.
 ///
 /// This is akin to using `Arc` for reference counting.
+#[derive(Debug)]
 pub struct Atomic(AtomicUsize);
 
 unsafe impl Atomicity for Atomic {
@@ -523,7 +527,7 @@ where
     A: Atomicity,
 {
     #[inline]
-    fn fmt(&self, f: &mut strfmt::Formatter) -> strfmt::Result {
+    fn fmt(&self, f: &mut strfmt::Formatter<'_>) -> strfmt::Result {
         let kind = match self.ptr.get().get() {
             p if p <= MAX_INLINE_TAG => "inline",
             p if p & 1 == 1 => "shared",
@@ -554,12 +558,14 @@ where
 {
     /// Create a new, empty `Tendril` in any format.
     #[inline(always)]
+    #[must_use]
     pub fn new() -> Tendril<F, A> {
         unsafe { Tendril::inline(&[]) }
     }
 
     /// Create a new, empty `Tendril` with a specified capacity.
     #[inline]
+    #[must_use]
     pub fn with_capacity(capacity: u32) -> Tendril<F, A> {
         let mut t: Tendril<F, A> = Tendril::new();
         if capacity > MAX_INLINE_LEN as u32 {
@@ -915,6 +921,7 @@ where
 
     /// Build a `Tendril` by copying a byte slice, without validating.
     #[inline]
+    #[must_use]
     pub unsafe fn from_byte_slice_without_validating(x: &[u8]) -> Tendril<F, A> {
         assert!(x.len() <= buf32::MAX_LEN);
         if x.len() <= MAX_INLINE_LEN {
@@ -980,6 +987,7 @@ where
 
     /// Slice this `Tendril` as a new `Tendril`.
     ///
+    /// # Safety
     /// Does not check validity or bounds!
     #[inline]
     pub unsafe fn unsafe_subtendril(&self, offset: u32, length: u32) -> Tendril<F, A> {
@@ -999,6 +1007,7 @@ where
 
     /// Drop `n` bytes from the front.
     ///
+    /// # Safety
     /// Does not check validity or bounds!
     #[inline]
     pub unsafe fn unsafe_pop_front(&mut self, n: u32) {
@@ -1019,6 +1028,7 @@ where
 
     /// Drop `n` bytes from the back.
     ///
+    /// # Safety
     /// Does not check validity or bounds!
     #[inline]
     pub unsafe fn unsafe_pop_back(&mut self, n: u32) {
@@ -1090,7 +1100,7 @@ where
             Buf32 {
                 ptr: header,
                 len: offset + self.len32(),
-                cap: cap,
+                cap,
             },
             shared,
             offset,
@@ -1147,7 +1157,7 @@ where
     }
 
     #[inline]
-    fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
+    fn as_byte_slice(&self) -> &[u8] {
         unsafe {
             match self.ptr.get().get() {
                 EMPTY_TAG => &[],
@@ -1166,7 +1176,7 @@ where
     // There's no need to worry about locking on an atomic Tendril, because it makes it unique as
     // soon as you do that.
     #[inline]
-    fn as_mut_byte_slice<'a>(&'a mut self) -> &'a mut [u8] {
+    fn as_mut_byte_slice(&mut self) -> &mut [u8] {
         unsafe {
             match self.ptr.get().get() {
                 EMPTY_TAG => &mut [],
@@ -1286,7 +1296,7 @@ where
 {
     /// Remove and return the first character, if any.
     #[inline]
-    pub fn pop_front_char<'a>(&'a mut self) -> Option<char> {
+    pub fn pop_front_char(&mut self) -> Option<char> {
         unsafe {
             let next_char; // first char in iterator
             let mut skip = 0; // number of bytes to skip, or 0 to clear
@@ -1311,10 +1321,10 @@ where
                 }
             }
 
-            if skip != 0 {
-                self.unsafe_pop_front(skip);
-            } else {
+            if skip == 0 {
                 self.clear();
+            } else {
+                self.unsafe_pop_front(skip);
             }
 
             next_char
@@ -1326,7 +1336,7 @@ where
     ///
     /// Returns `None` on an empty string.
     #[inline]
-    pub fn pop_front_char_run<'a, C, R>(&'a mut self, mut classify: C) -> Option<(Tendril<F, A>, R)>
+    pub fn pop_front_char_run<C, R>(&mut self, mut classify: C) -> Option<(Tendril<F, A>, R)>
     where
         C: FnMut(char) -> R,
         R: PartialEq,
@@ -1336,7 +1346,7 @@ where
             let mut chars = unsafe { F::char_indices(self.as_byte_slice()) };
             let (_, first) = unwrap_or_return!(chars.next(), None);
             class = classify(first);
-            first_mismatch = chars.find(|&(_, ch)| &classify(ch) != &class);
+            first_mismatch = chars.find(|&(_, ch)| classify(ch) != class);
         }
 
         match first_mismatch {
@@ -1491,7 +1501,7 @@ where
     pub unsafe fn push_uninitialized(&mut self, n: u32) {
         let new_len = self.len32().checked_add(n).expect(OFLOW);
         if new_len <= MAX_INLINE_LEN as u32 && self.ptr.get().get() <= MAX_INLINE_TAG {
-            self.ptr.set(inline_tag(new_len))
+            self.ptr.set(inline_tag(new_len));
         } else {
             self.make_owned_with_capacity(new_len);
             self.set_len(new_len);
@@ -1504,7 +1514,7 @@ where
     A: Atomicity,
 {
     #[inline]
-    fn fmt(&self, f: &mut strfmt::Formatter) -> strfmt::Result {
+    fn fmt(&self, f: &mut strfmt::Formatter<'_>) -> strfmt::Result {
         <str as strfmt::Display>::fmt(&**self, f)
     }
 }
@@ -1582,6 +1592,7 @@ where
 
     /// Create a `Tendril` from a single character.
     #[inline]
+    #[must_use]
     pub fn from_char(c: char) -> Tendril<fmt::UTF8, A> {
         let mut t: Tendril<fmt::UTF8, A> = Tendril::new();
         t.push_char(c);
@@ -1590,7 +1601,8 @@ where
 
     /// Helper for the `format_tendril!` macro.
     #[inline]
-    pub fn format(args: strfmt::Arguments) -> Tendril<fmt::UTF8, A> {
+    #[must_use]
+    pub fn format(args: strfmt::Arguments<'_>) -> Tendril<fmt::UTF8, A> {
         use std::fmt::Write;
         let mut output: Tendril<fmt::UTF8, A> = Tendril::new();
         let _ = write!(&mut output, "{}", args);
@@ -1667,7 +1679,7 @@ mod test {
     use super::{
         Atomic, ByteTendril, Header, NonAtomic, ReadExt, SendTendril, SliceExt, StrTendril, Tendril,
     };
-    use fmt;
+    use crate::fmt;
     use std::iter;
     use std::thread;
 
@@ -1868,7 +1880,7 @@ mod test {
 
         let ascii: Tendril<fmt::ASCII> = b"hello".to_tendril().try_reinterpret().unwrap();
         assert_eq!(&"hello".to_tendril(), ascii.as_superset());
-        assert_eq!("hello".to_tendril(), ascii.clone().into_superset());
+        assert_eq!("hello".to_tendril(), ascii.into_superset());
 
         assert!(b"\xFF"
             .to_tendril()
@@ -2305,13 +2317,13 @@ mod test {
         let mut t = "Hello".to_tendril();
         t.extend(None::<&str>.into_iter());
         assert_eq!("Hello", &*t);
-        t.extend([", ", "world", "!"].iter().map(|&s| s));
+        t.extend([", ", "world", "!"].iter().copied());
         assert_eq!("Hello, world!", &*t);
         assert_eq!(
             "Hello, world!",
             &*["Hello", ", ", "world", "!"]
                 .iter()
-                .map(|&s| s)
+                .copied()
                 .collect::<StrTendril>()
         );
 
@@ -2322,7 +2334,7 @@ mod test {
         t.extend(
             [b", ".as_ref(), b"world".as_ref(), b"!".as_ref()]
                 .iter()
-                .map(|&s| s),
+                .copied(),
         );
         assert_eq!(b"Hello, world!", &*t);
         assert_eq!(
@@ -2334,7 +2346,7 @@ mod test {
                 b"!".as_ref()
             ]
             .iter()
-            .map(|&s| s)
+            .copied()
             .collect::<ByteTendril>()
         );
 
@@ -2356,9 +2368,9 @@ mod test {
         assert_eq!(bytes_expected, tendril);
 
         // u8
-        assert_eq!(bytes_expected, bytes.iter().map(|&b| b).collect());
+        assert_eq!(bytes_expected, bytes.iter().copied().collect());
         let mut tendril = ByteTendril::new();
-        tendril.extend(bytes.iter().map(|&b| b));
+        tendril.extend(bytes.iter().copied());
         assert_eq!(bytes_expected, tendril);
     }
 
