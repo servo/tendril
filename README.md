@@ -40,26 +40,6 @@ operations are available on a given tendril. For example, `Tendril<UTF8>` and
 [rust-encoding](https://github.com/lifthrasiir/rust-encoding) and has
 preliminary support for [WTF-8][] buffers.
 
-## C interface
-
-`Tendril` provides a C API, which allows Rust to efficiently exchange buffers
-with C or any other language.
-
-```c
-#include "tendril.h"
-
-int main() {
-    tendril t = TENDRIL_INIT;
-    tendril_sprintf(&t, "Hello, %d!\n", 2015);
-    tendril_fwrite(&t, stdout);
-    some_rust_library(t);  // transfer ownership
-    return 0;
-}
-```
-
-See the [API documentation](https://github.com/kmcallister/tendril/blob/master/capi/include/tendril.h#L18)
-and the [test program](https://github.com/kmcallister/tendril/blob/master/capi/ctest/test.c).
-
 ## Plans for the future
 
 ### Ropes
