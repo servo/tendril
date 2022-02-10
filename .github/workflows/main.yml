@@ -36,11 +36,6 @@ jobs:
         if: matrix.toolchain == 'nightly'
         run: cargo test --features bench
 
-      - name: capi
-        if: matrix.toolchain == 'nightly'
-        run: ./build-and-test.sh
-        working-directory: capi/ctest
-
   build_result:
     name: homu build finished
     runs-on: ubuntu-latest
@@ -54,4 +49,3 @@ jobs:
       - name: Mark the job as unsuccessful
         run: exit 1
         if: "!success()"
-
