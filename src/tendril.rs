@@ -69,29 +69,25 @@ pub unsafe trait Atomicity: 'static {
 ///
 /// This is akin to using `Rc` for reference counting.
 #[repr(C)]
-pub struct NonAtomic(Cell<PackedUsize>);
-
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-struct PackedUsize(usize);
+pub struct NonAtomic(Cell<usize>);
 
 unsafe impl Atomicity for NonAtomic {
     #[inline]
     fn new() -> Self {
-        NonAtomic(Cell::new(PackedUsize(1)))
+        NonAtomic(Cell::new(1))
     }
 
     #[inline]
     fn increment(&self) -> usize {
-        let value = self.0.get().0;
-        self.0.set(PackedUsize(value.checked_add(1).expect(OFLOW)));
+        let value = self.0.get();
+        self.0.set(value.checked_add(1).expect(OFLOW));
         value
     }
 
     #[inline]
     fn decrement(&self) -> usize {
-        let value = self.0.get().0;
-        self.0.set(PackedUsize(value - 1));
+        let value = self.0.get();
+        self.0.set(value - 1);
         value
     }
 
@@ -130,6 +126,7 @@ unsafe impl Atomicity for Atomic {
     }
 }
 
+#[repr(C)] // Preserve field order for cross-atomicity transmutes
 struct Header<A: Atomicity> {
     refcount: A,
     cap: u32,
@@ -1712,7 +1709,7 @@ mod test {
             mem::size_of::<Header<Atomic>>(),
         );
         assert_eq!(
-            mem::size_of::<*const ()>() + 4,
+            mem::size_of::<Header<Atomic>>(),
             mem::size_of::<Header<NonAtomic>>(),
         );
     }
@@ -2446,6 +2443,16 @@ mod test {
         .join()
         .unwrap();
         assert_eq!("this is a string", &*t);
+    }
+
+    /// https://github.com/servo/tendril/issues/58
+    #[test]
+    fn issue_58() {
+        let data = "<p><i>Hello!</p>, World!</i>";
+        let s: Tendril<fmt::UTF8, NonAtomic> = data.into();
+        assert_eq!(&*s, data);
+        let s: Tendril<fmt::UTF8, Atomic> = s.into_send().into();
+        assert_eq!(&*s, data);
     }
 
     #[test]
