@@ -1,6 +1,6 @@
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
@@ -368,7 +368,7 @@ unsafe impl<'a> CharFormat<'a> for UTF8 {
 
 /// Marker type for WTF-8 text.
 ///
-/// See the [WTF-8 spec](http://simonsapin.github.io/wtf-8/).
+/// See the [WTF-8 spec](https://simonsapin.github.io/wtf-8/).
 #[derive(Copy, Clone, Default, Debug)]
 pub struct WTF8;
 
