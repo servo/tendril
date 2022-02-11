@@ -1,6 +1,6 @@
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
@@ -27,7 +27,7 @@ fn bytes_to_vec_capacity<H>(x: u32) -> usize {
     let header = mem::size_of::<H>();
     debug_assert!(header > 0);
     let x = (x as usize).checked_add(header).expect(OFLOW);
-    // Integer ceil http://stackoverflow.com/a/2745086/1162888
+    // Integer ceil https://stackoverflow.com/a/2745086/1162888
     1 + ((x - 1) / header)
 }
 
