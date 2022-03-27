@@ -32,4 +32,7 @@ mod tendril;
 mod utf8_decode;
 mod util;
 
+#[cfg(feature = "serde")]
+mod serde_impl;
+
 static OFLOW: &'static str = "tendril: overflow in buffer arithmetic";
