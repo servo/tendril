@@ -11,8 +11,8 @@ use std::default::Default;
 use std::fmt as strfmt;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
+use std::ptr::NonNull;
 use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::atomic::{self, AtomicUsize};
 use std::{hash, io, mem, ptr, str, u32};
@@ -31,9 +31,15 @@ const MAX_INLINE_TAG: usize = 0xF;
 const EMPTY_TAG: usize = 0xF;
 
 #[inline(always)]
-fn inline_tag(len: u32) -> NonZeroUsize {
+fn inline_tag<T>(len: u32) -> NonNull<T> {
     debug_assert!(len <= MAX_INLINE_LEN as u32);
-    unsafe { NonZeroUsize::new_unchecked(if len == 0 { EMPTY_TAG } else { len as usize }) }
+    unsafe {
+        NonNull::new_unchecked(if len == 0 {
+            EMPTY_TAG as *mut T
+        } else {
+            len as usize as *mut T
+        })
+    }
 }
 
 /// The multithreadedness of a tendril.
@@ -186,7 +192,7 @@ where
     F: fmt::Format,
     A: Atomicity,
 {
-    ptr: Cell<NonZeroUsize>,
+    ptr: Cell<NonNull<Header<A>>>,
     buf: UnsafeCell<Buffer>,
     marker: PhantomData<*mut F>,
     refcount_marker: PhantomData<A>,
@@ -226,7 +232,7 @@ where
     #[inline]
     fn clone(&self) -> Tendril<F, A> {
         unsafe {
-            if self.ptr.get().get() > MAX_INLINE_TAG {
+            if self.addr() > MAX_INLINE_TAG {
                 self.make_buf_shared();
                 self.incref();
             }
@@ -244,11 +250,10 @@ where
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            let p = self.ptr.get().get();
+            let p = self.addr();
             if p <= MAX_INLINE_TAG {
                 return;
             }
-
             let (buf, shared, _) = self.assume_buf();
             if shared {
                 let header = self.header();
@@ -521,7 +526,7 @@ where
 {
     #[inline]
     fn fmt(&self, f: &mut strfmt::Formatter) -> strfmt::Result {
-        let kind = match self.ptr.get().get() {
+        let kind = match self.addr() {
             p if p <= MAX_INLINE_TAG => "inline",
             p if p & 1 == 1 => "shared",
             _ => "owned",
@@ -597,7 +602,7 @@ where
     /// slice, if any.
     #[inline(always)]
     pub fn len32(&self) -> u32 {
-        match self.ptr.get().get() {
+        match self.addr() {
             EMPTY_TAG => 0,
             n if n <= MAX_INLINE_LEN => n as u32,
             _ => unsafe { self.raw_len() },
@@ -607,7 +612,7 @@ where
     /// Is the backing buffer shared?
     #[inline]
     pub fn is_shared(&self) -> bool {
-        let n = self.ptr.get().get();
+        let n = self.addr();
 
         (n > MAX_INLINE_TAG) && ((n & 1) == 1)
     }
@@ -615,17 +620,17 @@ where
     /// Is the backing buffer shared with this other `Tendril`?
     #[inline]
     pub fn is_shared_with(&self, other: &Tendril<F, A>) -> bool {
-        let n = self.ptr.get().get();
+        let n = self.addr();
 
-        (n > MAX_INLINE_TAG) && (n == other.ptr.get().get())
+        (n > MAX_INLINE_TAG) && (n == other.addr())
     }
 
     /// Truncate to length 0 without discarding any owned storage.
     #[inline]
     pub fn clear(&mut self) {
-        if self.ptr.get().get() <= MAX_INLINE_TAG {
+        if self.addr() <= MAX_INLINE_TAG {
             self.ptr
-                .set(unsafe { NonZeroUsize::new_unchecked(EMPTY_TAG) });
+                .set(unsafe { NonNull::new_unchecked(EMPTY_TAG as *mut Header<A>) });
         } else {
             let (_, shared, _) = unsafe { self.assume_buf() };
             if shared {
@@ -765,7 +770,7 @@ where
         let new_len = self.len32().checked_add(other.len32()).expect(OFLOW);
 
         unsafe {
-            if (self.ptr.get().get() > MAX_INLINE_TAG) && (other.ptr.get().get() > MAX_INLINE_TAG) {
+            if (self.addr() > MAX_INLINE_TAG) && (other.addr() > MAX_INLINE_TAG) {
                 let (self_buf, self_shared, _) = self.assume_buf();
                 let (other_buf, other_shared, _) = other.assume_buf();
 
@@ -1036,12 +1041,12 @@ where
 
     #[inline]
     unsafe fn make_buf_shared(&self) {
-        let p = self.ptr.get().get();
-        if p & 1 == 0 {
-            let header = p as *mut Header<A>;
+        let p = self.ptr.get();
+        if nn_addr(p) & 1 == 0 {
+            let header = p.as_ptr();
             (*header).cap = self.aux();
 
-            self.ptr.set(NonZeroUsize::new_unchecked(p | 1));
+            self.ptr.set(nn_map_addr(p, |p| p | 1));
             self.set_aux(0);
         }
     }
@@ -1052,7 +1057,7 @@ where
     #[inline]
     fn make_owned(&mut self) {
         unsafe {
-            let ptr = self.ptr.get().get();
+            let ptr = self.addr();
             if ptr <= MAX_INLINE_TAG || (ptr & 1) == 1 {
                 *self = Tendril::owned_copy(self.as_byte_slice());
             }
@@ -1064,18 +1069,20 @@ where
         self.make_owned();
         let mut buf = self.assume_buf().0;
         buf.grow(cap);
-        self.ptr.set(NonZeroUsize::new_unchecked(buf.ptr as usize));
+        self.ptr.set(NonNull::new_unchecked(buf.ptr));
         self.set_aux(buf.cap);
     }
 
     #[inline(always)]
     unsafe fn header(&self) -> *mut Header<A> {
-        (self.ptr.get().get() & !1) as *mut Header<A>
+        let ptr = self.ptr.get().as_ptr();
+
+        map_addr(ptr, |p| p & !1)
     }
 
     #[inline]
     unsafe fn assume_buf(&self) -> (Buf32<Header<A>>, bool, u32) {
-        let ptr = self.ptr.get().get();
+        let ptr = self.addr();
         let header = self.header();
         let shared = (ptr & 1) == 1;
         let (cap, offset) = match shared {
@@ -1110,7 +1117,7 @@ where
     #[inline]
     unsafe fn owned(x: Buf32<Header<A>>) -> Tendril<F, A> {
         Tendril {
-            ptr: Cell::new(NonZeroUsize::new_unchecked(x.ptr as usize)),
+            ptr: Cell::new(NonNull::new_unchecked(x.ptr)),
             buf: UnsafeCell::new(Buffer {
                 heap: Heap {
                     len: x.len,
@@ -1133,8 +1140,9 @@ where
 
     #[inline]
     unsafe fn shared(buf: Buf32<Header<A>>, off: u32, len: u32) -> Tendril<F, A> {
+        let non_null = NonNull::new_unchecked(buf.ptr);
         Tendril {
-            ptr: Cell::new(NonZeroUsize::new_unchecked((buf.ptr as usize) | 1)),
+            ptr: Cell::new(nn_map_addr(non_null, |p| p | 1)),
             buf: UnsafeCell::new(Buffer {
                 heap: Heap { len, aux: off },
             }),
@@ -1146,7 +1154,7 @@ where
     #[inline]
     fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
         unsafe {
-            match self.ptr.get().get() {
+            match self.addr() {
                 EMPTY_TAG => &[],
                 n if n <= MAX_INLINE_LEN => (*self.buf.get()).inline.get_unchecked(..n),
                 _ => {
@@ -1165,7 +1173,7 @@ where
     #[inline]
     fn as_mut_byte_slice<'a>(&'a mut self) -> &'a mut [u8] {
         unsafe {
-            match self.ptr.get().get() {
+            match self.addr() {
                 EMPTY_TAG => &mut [],
                 n if n <= MAX_INLINE_LEN => (*self.buf.get()).inline.get_unchecked_mut(..n),
                 _ => {
@@ -1192,6 +1200,10 @@ where
 
     unsafe fn set_aux(&self, aux: u32) {
         (*self.buf.get()).heap.aux = aux;
+    }
+
+    fn addr(&self) -> usize {
+        nn_addr(self.ptr.get())
     }
 }
 
@@ -1487,7 +1499,7 @@ where
     #[inline]
     pub unsafe fn push_uninitialized(&mut self, n: u32) {
         let new_len = self.len32().checked_add(n).expect(OFLOW);
-        if new_len <= MAX_INLINE_LEN as u32 && self.ptr.get().get() <= MAX_INLINE_TAG {
+        if new_len <= MAX_INLINE_LEN as u32 && self.addr() <= MAX_INLINE_TAG {
             self.ptr.set(inline_tag(new_len))
         } else {
             self.make_owned_with_capacity(new_len);
@@ -1653,6 +1665,41 @@ where
     fn from(input: &'a Tendril<fmt::UTF8, A>) -> String {
         String::from(&**input)
     }
+}
+
+// strict provenance helpers
+
+fn addr<T>(ptr: *mut T) -> usize {
+    ptr as usize
+}
+
+// stolen from the `sptr` crate
+fn with_addr<T>(ptr: *mut T, address: usize) -> *mut T {
+    // In the mean-time, this operation is defined to be "as if" it was
+    // a wrapping_offset, so we can emulate it as such. This should properly
+    // restore pointer provenance even under today's compiler.
+    let self_addr = addr(ptr) as isize;
+    let dest_addr = address as isize;
+    let offset = dest_addr.wrapping_sub(self_addr);
+
+    // This is the canonical desugarring of this operation,
+    // but `pointer::cast` was only stabilized in 1.38.
+    // self.cast::<u8>().wrapping_offset(offset).cast::<T>()
+    (ptr as *mut u8).wrapping_offset(offset) as *mut T
+}
+
+fn map_addr<T>(ptr: *mut T, f: impl FnOnce(usize) -> usize) -> *mut T {
+    with_addr(ptr, f(addr(ptr)))
+}
+
+fn nn_addr<T>(ptr: NonNull<T>) -> usize {
+    addr(ptr.as_ptr())
+}
+
+unsafe fn nn_map_addr<T>(ptr: NonNull<T>, f: impl FnOnce(usize) -> usize) -> NonNull<T> {
+    let ptr = map_addr(ptr.as_ptr(), f);
+    debug_assert!(!ptr.is_null());
+    NonNull::new_unchecked(ptr)
 }
 
 #[cfg(all(test, feature = "bench"))]
