@@ -159,10 +159,11 @@ pub enum SubtendrilError {
 /// if necessary. Further mutations occur in-place until the string becomes
 /// shared, e.g. with `clone()` or `subtendril()`.
 ///
-/// Buffer sharing is accomplished through thread-local (non-atomic) reference
-/// counting, which has very low overhead. The Rust type system will prevent
-/// you at compile time from sending a `Tendril` between threads. We plan to
-/// relax this restriction in the future; see `README.md`.
+/// Buffer sharing is by default accomplished through thread-local (non-atomic)
+/// reference counting, which has very low overhead. The Rust type system will prevent
+/// you at compile time from sending a nonatomic tendril between threads. To make a
+/// tendril shareable across threads, define it with [`Atomic`][Atomic] or use
+/// [`SendTendril`][SendTendril].
 ///
 /// Whereas `String` allocates in the heap for any non-empty string, `Tendril`
 /// can store small strings (up to 8 bytes) in-line, without a heap allocation.
