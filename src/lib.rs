@@ -16,7 +16,6 @@ extern crate test;
 #[macro_use]
 extern crate mac;
 extern crate futf;
-extern crate utf8;
 
 pub use fmt::Format;
 pub use stream::TendrilSink;
@@ -31,5 +30,6 @@ mod buf32;
 mod tendril;
 mod utf8_decode;
 mod util;
+mod utf8;
 
 static OFLOW: &'static str = "tendril: overflow in buffer arithmetic";
