@@ -14,7 +14,6 @@ mac = "0.1"
 encoding = {version = "0.2", optional = true}
 encoding_rs = {version = "0.8.12", optional = true}
 futf = "0.1.5"
-utf-8 = "0.7"
 
 [dev-dependencies]
 rand = "0.4"
