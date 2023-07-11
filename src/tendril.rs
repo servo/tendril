@@ -1701,8 +1701,9 @@ mod test {
         assert_eq!(correct, mem::size_of::<ByteTendril>());
         assert_eq!(correct, mem::size_of::<StrTendril>());
 
-        assert_eq!(correct, mem::size_of::<Option<ByteTendril>>());
-        assert_eq!(correct, mem::size_of::<Option<StrTendril>>());
+        // This is no longer true. See https://github.com/servo/tendril/issues/66
+        // assert_eq!(correct, mem::size_of::<Option<ByteTendril>>());
+        // assert_eq!(correct, mem::size_of::<Option<StrTendril>>());
 
         assert_eq!(
             mem::size_of::<*const ()>() * 2,
