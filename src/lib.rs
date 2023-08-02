@@ -7,6 +7,8 @@
 #![cfg_attr(all(test, feature = "bench"), feature(test))]
 //#![cfg_attr(test, deny(warnings))]
 
+#[macro_use]
+extern crate debug_unreachable;
 #[cfg(feature = "encoding")]
 pub extern crate encoding;
 #[cfg(feature = "encoding_rs")]
@@ -15,7 +17,6 @@ pub extern crate encoding_rs;
 extern crate test;
 #[macro_use]
 extern crate mac;
-extern crate futf;
 extern crate utf8;
 
 pub use fmt::Format;
@@ -28,6 +29,7 @@ pub mod fmt;
 pub mod stream;
 
 mod buf32;
+mod futf;
 mod tendril;
 mod utf8_decode;
 mod util;
